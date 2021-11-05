@@ -16,14 +16,19 @@ FLAGS = flags.FLAGS
 Mainly to see if data-frame that contains names of summary statitistics traits
 already exists 
 '''
+
+temp_path_to_files = '/project2/jjberg/data/summary_statistics/Fin_BANK/open_gwas_data_vcf/'
+temp_path_to_reference = '/project2/jjberg/data/1kg/Reference/1kg.v3/EUR/'
+temp_path_to_plink='/software/plink-1.90-el7-x86_64/plink'
+
 # Data params
 flags.DEFINE_string('dataframe_name', 'fin_biobank_vcf.pkl', 'Dataframe (pkl) File Name')
-flags.DEFINE_string('path_to_vcf_files', "/home/ludeep/Desktop/PopGen/FinBank/open_gwas_data_vcf/", 'Path to summary statistics')
+flags.DEFINE_string('path_to_vcf_files', temp_path_to_files, 'Path to summary statistics')
 flags.DEFINE_integer('num_traits', 1, 'Number of traits to extract data from')
 flags.DEFINE_integer('num_snps', 660000, 'Number of SNPS to extract from dataset, 0 for all SNPS')
 flags.DEFINE_float('ld_threshold', 10e-8, "Threshold of LD matrix values, anything less than or equal to is 0.")
-flags.DEFINE_string('plink_path', "/usr/bin/plink1.9", "Path to Plink")
-flags.DEFINE_string('reference_path', "/home/ludeep/Desktop/PopGen/eqtlGen/Reference/1kg.v3.tgz", "Path to Reference File")
+flags.DEFINE_string('plink_path',temp_path_to_plink, "Path to Plink")
+flags.DEFINE_string('reference_path', temp_path_to_reference, "Path to Reference File")
 
 flags.register_validator('num_snps',
                          lambda value: value % 22 == 0,
@@ -76,11 +81,12 @@ def getRSIDS(path_to_vcf_files: str, num_traits: int,num_snps: int):
             the_contigs = list(samfile.header.contigs) 
             rsIDs = np.empty((len(the_contigs),num_variants), dtype=object) # Hopefully no out of index error to be efficient, also not efficient because unknown length of string
             for i, a_contig in enumerate(tqdm(the_contigs)):
-                for ind, variant in enumerate(g.query(contig=a_contig)):
+                for ind, variant in enumerate(tqdm(g.query(contig=a_contig))):
                     rsIDs[i, ind]=pygwasvcf.VariantRecordGwasFuns.get_id(variant, trait_name)
             rsid_listname='{}{}_all_variants_file.pkl'.format(path_to_vcf_files,trait_name)
             # now choose 
             np.save(rsid_listname, rsIDs)
+            print("Finishing saving all rsIDs now moving to smaller subset if flag is set to 0")
             if num_snps != 0:
                 print ("Using a smaller number of varints, {}, in comparison to total number of SNPS, so downsampling SNPs.".format(num_snps))
                 newRSIds = np.take(rsIDs, random_unique_indexes_per_row(rsIDs, num_snps))
