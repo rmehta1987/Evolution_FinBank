@@ -74,7 +74,7 @@ def getRSIDS(path_to_vcf_files: str, num_traits: int,num_snps: int):
                 try:
                     os.mkdir(trait_rsids_dir)
                 except OSError:
-                    print("Making directory")
+                    print("Error in making directory")
             num_variants = int(g.get_metadata()[trait_name]['TotalVariants']) - int(g.get_metadata()[trait_name]['VariantsNotRead'])
             print("Number of variants {} in the trait {}".format(num_variants, trait_name))
             # gets a list of all the contigs from the header (assumes header info has contigs)
@@ -82,11 +82,13 @@ def getRSIDS(path_to_vcf_files: str, num_traits: int,num_snps: int):
             rsIDs = np.empty((len(the_contigs),num_variants), dtype=object) # Hopefully no out of index error to be efficient, also not efficient because unknown length of string
             for i, a_contig in enumerate(tqdm(the_contigs)):
                 for ind, variant in enumerate(tqdm(g.query(contig=a_contig))):
-                    rsIDs[i, ind]=pygwasvcf.VariantRecordGwasFuns.get_id(variant, trait_name)
-            rsid_listname='{}{}_all_variants_file.pkl'.format(path_to_vcf_files,trait_name)
+                    # rsIDs[i, ind]=pygwasvcf.VariantRecordGwasFuns.get_id(variant, trait_name) some id's are '.'
+                    temp_trait = pygwasvcf.VariantRecordGwasFuns.get_id(variant, trait_name)
+            # save all rsids into folder of that trait
+            rsid_listname='{}/{}/{}_all_variants_file.pkl'.format(path_to_vcf_files,traid_rsids_dir,trait_name)
             # now choose 
             np.save(rsid_listname, rsIDs)
-            print("Finishing saving all rsIDs now moving to smaller subset if flag is set to 0")
+            print("Finishing saving all rsIDs now moving to smaller subset if flag is not set to 0")
             if num_snps != 0:
                 print ("Using a smaller number of varints, {}, in comparison to total number of SNPS, so downsampling SNPs.".format(num_snps))
                 newRSIds = np.take(rsIDs, random_unique_indexes_per_row(rsIDs, num_snps))
