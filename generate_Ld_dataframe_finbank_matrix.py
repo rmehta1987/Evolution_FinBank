@@ -66,7 +66,7 @@ def getRSIDS(path_to_vcf_files: str, num_traits: int,num_snps: int):
         np.save('random_vcf_files',vcf_files)
         del vcf_files_random_choice
         
-    for a_vcf_file in vcf_files:
+    for num_file, a_vcf_file in enumerate(tqdm(vcf_files)):
         with pygwasvcf.GwasVcf(a_vcf_file) as g, pysam.VariantFile(a_vcf_file) as samfile:
             trait_name = g.get_traits()[0]
             trait_rsids_dir = os.path.join(path_to_vcf_files,'{}_rsids'.format(trait_name))
@@ -75,6 +75,11 @@ def getRSIDS(path_to_vcf_files: str, num_traits: int,num_snps: int):
                     os.mkdir(trait_rsids_dir)
                 except OSError:
                     print("Error in making directory")
+            else:
+                temp_files = os.listdir(traits_rsids_dir)
+                if "all_variants" in str(temp_files):
+                    print("Skipping file, delete -- todo to make more efficient")
+                    continue # Skipping File
             num_variants = int(g.get_metadata()[trait_name]['TotalVariants']) - int(g.get_metadata()[trait_name]['VariantsNotRead'])
             print("Number of variants {} in the trait {}".format(num_variants, trait_name))
             # gets a list of all the contigs from the header (assumes header info has contigs)
@@ -106,6 +111,7 @@ def getRSIDS(path_to_vcf_files: str, num_traits: int,num_snps: int):
             else:
                 raise Exception("Number of variants requested is greater than number of SNPS in dataset, use 0 to request all variants")
             del rsIDs
+            print("Now on trait #{}".format(num_file))
             
             
            
