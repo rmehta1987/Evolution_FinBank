@@ -24,7 +24,7 @@ temp_path_to_plink='/software/plink-1.90-el7-x86_64/plink'
 # Data params
 flags.DEFINE_string('dataframe_name', 'fin_biobank_vcf.pkl', 'Dataframe (pkl) File Name')
 flags.DEFINE_string('path_to_vcf_files', temp_path_to_files, 'Path to summary statistics')
-flags.DEFINE_integer('num_traits', 1, 'Number of traits to extract data from')
+flags.DEFINE_integer('num_traits', 1000, 'Number of traits to extract data from')
 flags.DEFINE_integer('num_snps', 660000, 'Number of SNPS to extract from dataset, 0 for all SNPS')
 flags.DEFINE_float('ld_threshold', 10e-8, "Threshold of LD matrix values, anything less than or equal to is 0.")
 flags.DEFINE_string('plink_path',temp_path_to_plink, "Path to Plink")
@@ -61,9 +61,9 @@ def getRSIDS(path_to_vcf_files: str, num_traits: int,num_snps: int):
         print("Using all traits in dataset")
     else:
         vcf_files_random_choice = np.random.choice(vcf_files,size=num_traits,replace=False)
-        print("Random sampled traits from dataset, saved as random_vcf_files.pkl")
+        print("Random sampled traits from dataset, saved as random_vcf_files")
         vcf_files = np.copy(vcf_files_random_choice)
-        np.save('random_vcf_files.pkl',vcf_files)
+        np.save('random_vcf_files',vcf_files)
         del vcf_files_random_choice
         
     for a_vcf_file in vcf_files:
@@ -79,22 +79,29 @@ def getRSIDS(path_to_vcf_files: str, num_traits: int,num_snps: int):
             print("Number of variants {} in the trait {}".format(num_variants, trait_name))
             # gets a list of all the contigs from the header (assumes header info has contigs)
             the_contigs = list(samfile.header.contigs) 
-            rsIDs = np.empty((len(the_contigs),num_variants), dtype=object) # Hopefully no out of index error to be efficient, also not efficient because unknown length of string
+            len_the_contigs = 23 if len(the_contigs) > 23 else len(the_contigs) # Some VCF files contain other information
+            rsIDs = np.empty((len_the_contigs,num_variants), dtype=object) # Hopefully no out of index error to be efficient, also not efficient because unknown length of string
             for i, a_contig in enumerate(tqdm(the_contigs)):
+                if i > 23:
+                    break # VCF files contain other information after 23 chromosomes
                 for ind, variant in enumerate(tqdm(g.query(contig=a_contig))):
                     # rsIDs[i, ind]=pygwasvcf.VariantRecordGwasFuns.get_id(variant, trait_name) some id's are '.'
                     temp_trait = pygwasvcf.VariantRecordGwasFuns.get_id(variant, trait_name)
+                    if temp_trait != '.':
+                        rsIDs[i, ind] = temp_trait # Currently ignore variants without IDs
+
+
             # save all rsids into folder of that trait
-            rsid_listname='{}/{}/{}_all_variants_file.pkl'.format(path_to_vcf_files,traid_rsids_dir,trait_name)
+            rsid_listname='{}/{}_all_variants_file'.format(trait_rsids_dir,trait_name)
             # now choose 
             np.save(rsid_listname, rsIDs)
             print("Finishing saving all rsIDs now moving to smaller subset if flag is not set to 0")
             if num_snps != 0:
                 print ("Using a smaller number of varints, {}, in comparison to total number of SNPS, so downsampling SNPs.".format(num_snps))
                 newRSIds = np.take(rsIDs, random_unique_indexes_per_row(rsIDs, num_snps))
-                rsid_listname='{}{}_{}_variants_file.pkl'.format(path_to_vcf_files,trait_name,num_snps)
+                rsid_listname='{}/{}_{}_variants_file'.format(trait_rsids_dir,trait_name,num_snps)
                 np.save(rsid_listname,newRSIds)
-                print("Saved RSIDS of trait {}".format(trait_name))
+                print("Saved subset of RSIDS of trait {}".format(trait_name))
                 del newRSIds
             else:
                 raise Exception("Number of variants requested is greater than number of SNPS in dataset, use 0 to request all variants")
