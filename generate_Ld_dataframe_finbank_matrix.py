@@ -6,7 +6,9 @@ import subprocess # for running plink
 import h5py as hf
 import numpy as np
 from tqdm import tqdm
-
+import re
+import typing
+from typing import List
 # Flag Parser 
 from absl import app 
 from absl import flags
@@ -18,8 +20,8 @@ already exists
 '''
 
 temp_path_to_files = '/project2/jjberg/data/summary_statistics/Fin_BANK/open_gwas_data_vcf/'
-temp_path_to_reference = '/project2/jjberg/data/1kg/Reference/1kg.v3/EUR/'
-temp_path_to_plink='/software/plink-1.90-el7-x86_64/plink'
+temp_path_to_reference = '/project2/jjberg/data/1kg/Reference/1kg.v3/EUR/EUR'
+temp_path_to_plink='/software/plink-1.90b6.9-el7-x86_64/plink'
 
 # Data params
 flags.DEFINE_string('dataframe_name', 'fin_biobank_vcf.pkl', 'Dataframe (pkl) File Name')
@@ -76,12 +78,14 @@ def getRSIDS(path_to_vcf_files: str, num_traits: int,num_snps: int):
                 except OSError:
                     print("Error in making directory")
             else:
-                temp_files = os.listdir(traits_rsids_dir)
+                temp_files = os.listdir(trait_rsids_dir)
                 if "all_variants" in str(temp_files):
-                    print("Skipping file, delete -- todo to make more efficient")
+                    print("Skipping trait {}, delete -- todo to make more efficient".format(trait_name))
                     continue # Skipping File
             num_variants = int(g.get_metadata()[trait_name]['TotalVariants']) - int(g.get_metadata()[trait_name]['VariantsNotRead'])
             print("Number of variants {} in the trait {}".format(num_variants, trait_name))
+            #print("debug break") -- debugging purposes
+            #break
             # gets a list of all the contigs from the header (assumes header info has contigs)
             the_contigs = list(samfile.header.contigs) 
             len_the_contigs = 23 if len(the_contigs) > 23 else len(the_contigs) # Some VCF files contain other information
@@ -114,14 +118,27 @@ def getRSIDS(path_to_vcf_files: str, num_traits: int,num_snps: int):
             print("Now on trait #{}".format(num_file))
             
             
-           
-def generateLD(rsIDs: np.ndarray, ld_threshold: float):
+
+def grabRSID_numpy(path_to_files: str, how_many: int):
+    
+    import pathlib
+
+    path = pathlib.Path(path_to_files) 
+    np_files = path.rglob("*.npy") # get names of all numpy arrays
+    pattern_re = re.compile(r"^(?!.*all).*") # Get only files that are sub-samples
+    sub_np_files = [a.as_posix() for a in np_files if re.match(pattern_re,a.name)] # Get file name and path
+    sub_np_files = sub_np_files[:how_many] # Get a certain number of files
+
+    return sub_np_files
+    
+
+def generateLD(path_to_plink: str, path_to_bfile: str, file_list_rsIDs: List[str], ld_threshold: float):
     """Generate an diagonal block matrix consisting of rsIDs, rsIDs on different chromosomes
     are zero, and anything less than threshold will be 0. If shape of rsIDS is too large (X x M),
     M > 1000000 number of SNPS it will require a large memory and hard-drive diskspace
     
     Args:
-        rsIDs (np.ndarray): X x M shape chronosomes x num_snps
+        rsIDs (list of strings):  list of files that store rsids for traits (saved as numpy ndarray)
         ld_threshold (float): Ld threshold anything below will be zero
     """
     #location of plink /usr/bin/plink1.9
@@ -133,11 +150,22 @@ def generateLD(rsIDs: np.ndarray, ld_threshold: float):
     
     
     # Create a LD matrix for every chromosome
-    chromosomes, num_snps = rsIDs.shape
-    for contig in chromosomes:
-        np.savetxt('rsidFil.txt',rsIDs[contig],fmt="%s")
-        # Create LD file in table format
-        execute_command('{0} --bfile {1} --r2 triangle bin --extract {} --ld-window-r2 {3} --out {1}'.format(path_to_plink, path_to_bfile, ld_threshold, 'ld.out')) 
+    print("Starting to process each trait rsID to generate LD matrix")
+    for an_array in file_list_rsIDs:
+        rsIDs = np.load(an_array)
+        chromosomes, num_snps = rsIDs.shape
+        for contig in range(0,chromosomes):
+            snp_list=rsIDs[contig, np.where(rsIDs[contig,:]!=None)]
+            # Get Trait Path
+            pattern_re = re.compile(r".*\/")
+            trait_name_path = re.match(pattern_re,an_array)[0]
+            print("Save RSIDS into a text file (one per line for chromosome: {}".format(contig))
+            rsid_txt_file_name = '{}contig_{}_rsidFil.txt'.format(trait_name_path,contig)
+            
+            np.savetxt(rsid_txt_file_name,snp_list,fmt="%s",delimiter='\n') 
+            # Create LD file in table format from rsid_ids
+            print("Executing Command plink")
+            execute_command('{} --bfile {} --r2 triangle gz --extract {} --out {}'.format(path_to_plink, path_to_bfile, rsid_txt_file_name, '{}ld_contig_{}.out'.format(trait_name_path,contig))) 
           
 def main(argv):
     
@@ -146,8 +174,12 @@ def main(argv):
     num_traits = FLAGS.num_traits
     num_snps = FLAGS.num_snps
     
-    getRSIDS(path_to_vcf_files, num_traits, num_snps)
-    #generateLD()
+    #getRSIDS(path_to_vcf_files, num_traits, num_snps)
+    # if passing from bash use: ar1=$(whereis plink | awk '{print $2}')
+    # where awk '{print $2}' is the 2nd variable from whereis, which
+    # is the path of plink
+    file_list = grabRSID_numpy(path_to_vcf_files,1)
+    generateLD(FLAGS.plink_path, FLAGS.reference_path,file_list, 1e-8)
 
 
 if __name__ == '__main__':
