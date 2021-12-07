@@ -115,3 +115,5 @@ open_gwas_data_vcf/
 # vsCode
 .vscode/
 
+# rsid files
+*_rsidFil.txt
