@@ -178,7 +178,7 @@ def main(argv):
     # if passing from bash use: ar1=$(whereis plink | awk '{print $2}')
     # where awk '{print $2}' is the 2nd variable from whereis, which
     # is the path of plink
-    file_list = grabRSID_numpy(path_to_vcf_files,1)
+    file_list = grabRSID_numpy(path_to_vcf_files,100)
     generateLD(FLAGS.plink_path, FLAGS.reference_path,file_list, 1e-8)
 
 

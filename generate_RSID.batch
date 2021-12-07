@@ -1,0 +1,17 @@
+#!/bin/bash
+#SBATCH --job-name=mehta5-simulate-LD
+#SBATCH --partition=bigmem2
+#SBATCH --time=12:00:00
+
+#SBATCH --nodes=2
+#SBATCH --ntasks-per-node=6
+#SBATCH --output=output.put
+#SBATCH --error=error.err
+#SBATCH --mem=64G
+
+module load python/cpython-3.7.0
+source /project2/jjberg/mehta5/EvolutionaryGWAS/virtualProject/bin activate
+
+which python
+
+python /project2/jjberg/mehta5/EvolutionaryGWAS/Evolution_FinBank/generate_Ld_dataframe_finbank_matrix.py
