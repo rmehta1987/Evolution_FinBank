@@ -1,4 +1,5 @@
 import glob
+from numpy import random
 import pygwasvcf
 import pysam
 import os
@@ -12,6 +13,9 @@ from typing import List
 # Flag Parser 
 from absl import app 
 from absl import flags
+import pickle
+import math
+import collections
 
 FLAGS = flags.FLAGS
 '''
@@ -19,7 +23,9 @@ Mainly to see if data-frame that contains names of summary statitistics traits
 already exists 
 '''
 
-temp_path_to_files = '/project2/jjberg/data/summary_statistics/Fin_BANK/open_gwas_data_vcf/'
+#temp_path_to_files = '/project2/jjberg/data/summary_statistics/Fin_BANK/open_gwas_data_vcf/'
+temp_path_to_files = '/home/ludeep/Desktop/PopGen/FinBank/open_gwas_data_vcf/'
+
 temp_path_to_reference = '/project2/jjberg/data/1kg/Reference/1kg.v3/EUR/EUR'
 temp_path_to_plink='/software/plink-1.90b6.9-el7-x86_64/plink'
 
@@ -88,33 +94,43 @@ def getRSIDS(path_to_vcf_files: str, num_traits: int,num_snps: int):
             #break
             # gets a list of all the contigs from the header (assumes header info has contigs)
             the_contigs = list(samfile.header.contigs) 
-            len_the_contigs = 23 if len(the_contigs) > 23 else len(the_contigs) # Some VCF files contain other information
-            rsIDs = np.empty((len_the_contigs,num_variants), dtype=object) # Hopefully no out of index error to be efficient, also not efficient because unknown length of string
+            len_the_contigs = 23 if len(the_contigs) >= 23 else len(the_contigs) # Some VCF files contain other information
+            #rsIDs = np.empty((len_the_contigs,num_variants), dtype=object) # Hopefully no out of index error to be efficient, also not efficient because unknown length of string
+            summary_stat_dict = collections.defaultdict(dict)
             for i, a_contig in enumerate(tqdm(the_contigs)):
                 if i > 23:
                     break # VCF files contain other information after 23 chromosomes
                 for ind, variant in enumerate(tqdm(g.query(contig=a_contig))):
+                    temp_trait_rsid = pygwasvcf.VariantRecordGwasFuns.get_id(variant, trait_name)
+                    summary_stat_dict[i][variant.pos]['beta']= pygwasvcf.VariantRecordGwasFuns.get_beta(variant, trait_name)
+                    summary_stat_dict[i][variant.pos]['se']= pygwasvcf.VariantRecordGwasFuns.get_se(variant, trait_name)
+                    summary_stat_dict[i][variant.pos]['af']= pygwasvcf.VariantRecordGwasFuns.get_beta(variant, trait_name)
+                    summary_stat_dict[i][variant.pos]['rsid']= temp_trait_rsid # Note some RSIDS are '.'
                     # rsIDs[i, ind]=pygwasvcf.VariantRecordGwasFuns.get_id(variant, trait_name) some id's are '.'
-                    temp_trait = pygwasvcf.VariantRecordGwasFuns.get_id(variant, trait_name)
-                    if temp_trait != '.':
-                        rsIDs[i, ind] = temp_trait # Currently ignore variants without IDs
+                    #if temp_trait != '.':
+                    #    rsIDs[i, ind] = temp_trait # Currently ignore variants without IDs
 
 
             # save all rsids into folder of that trait
-            rsid_listname='{}/{}_all_variants_file'.format(trait_rsids_dir,trait_name)
+            #rsid_listname='{}/{}_all_variants_file'.format(trait_rsids_dir,trait_name)
+            summary_state_dict_name='{}/{}_all_variants_file'.format(trait_rsids_dir,trait_name)
             # now choose 
-            np.save(rsid_listname, rsIDs)
-            print("Finishing saving all rsIDs now moving to smaller subset if flag is not set to 0")
+            #np.save(rsid_listname, rsIDs)
+            #print("Finishing saving all rsIDs now moving to smaller subset if flag is not set to 0")
             if num_snps != 0:
                 print ("Using a smaller number of varints, {}, in comparison to total number of SNPS, so downsampling SNPs.".format(num_snps))
-                newRSIds = np.take(rsIDs, random_unique_indexes_per_row(rsIDs, num_snps))
-                rsid_listname='{}/{}_{}_variants_file'.format(trait_rsids_dir,trait_name,num_snps)
-                np.save(rsid_listname,newRSIds)
+                temp_matrix = np.ones((len_the_contigs, num_variants))  # Create a matrix of ones to select random snps from defaultdict, summary_stat_dict 
+                new_temp_matrix = np.take(temp_matrix, random_unique_indexes_per_row(temp_matrix, num_snps))
+                summary_state_dict_name = '{}/{}_{}_variants_file'.format(trait_rsids_dir,trait_name,num_snps)
+                # Extract SNPS from dictionary
+                summary_state_dict_name_smaller = summary_stat_dict
+                np.save(summary_state_dict_name, summary_state_dict_name_smaller)
                 print("Saved subset of RSIDS of trait {}".format(trait_name))
-                del newRSIds
+                del summary_state_dict_name_smaller
+                del summary_state_dict_name, new_temp_matrix, temp_matrix
             else:
                 raise Exception("Number of variants requested is greater than number of SNPS in dataset, use 0 to request all variants")
-            del rsIDs
+            del summary_stat_dict
             print("Now on trait #{}".format(num_file))
             
             
@@ -166,6 +182,71 @@ def generateLD(path_to_plink: str, path_to_bfile: str, file_list_rsIDs: List[str
             # Create LD file in table format from rsid_ids
             print("Executing Command plink")
             execute_command('{} --bfile {} --r2 triangle gz --extract {} --out {}'.format(path_to_plink, path_to_bfile, rsid_txt_file_name, '{}ld_contig_{}.out'.format(trait_name_path,contig))) 
+
+def generateSummaryStats(unique_snps_path: str, path_to_vcf_files: str, random_sub_sample: None):
+    """
+        This function unfortunately does not work, as it is difficult to query a VCF file based on RSID.  
+        
+    Args:
+        unique_snps (str): Path to unique set of SNPS identified by RSIDS
+        path_to_vcf_files (str): [description]
+        random_sub_sample (None): [description]
+
+    Raises:
+        Exception: [description]
+    """    
+    
+    summary_dict = {}
+    if not random_sub_sample:
+        random_sub_sample = math.inf
+    
+    vcf_files = glob.glob("{}*.gz".format(path_to_vcf_files))
+    with open(unique_snps_path) as file:
+        for line in file:
+            regex_pattern = r"[a-z0-9]*[^_;]"
+            rsid = line.rstrip().strip()
+            matches = re.finditer(regex_pattern, rsid)
+            for matchNum, match in enumerate(matches):
+                print ("Match {matchNum} was found at: {match}".format(matchNum = matchNum, match = match.group()))
+                summary_dict[match.group()] = None
+            if len(summary_dict) > random_sub_sample:
+                break
+    
+    for num_file, a_vcf_file in enumerate(tqdm(vcf_files)):
+        with pygwasvcf.GwasVcf(a_vcf_file) as g, pysam.VariantFile(a_vcf_file) as samfile:
+            trait_name = g.get_traits()[0]
+            trait_rsids_dir = os.path.join(path_to_vcf_files,'{}_rsids'.format(trait_name))
+            g.index_rsid()
+            if not (os.path.isdir(trait_rsids_dir)):
+                try:
+                    os.mkdir(trait_rsids_dir)
+                except OSError:
+                    print("Error in making directory")
+            print("Getting statistics for this number of variants {} in the trait {}".format(len(summary_dict), trait_name))
+            #print("debug break") -- debugging purposes
+            #break
+            # gets a list of all the contigs from the header (assumes header info has contigs)
+            for i, the_rsid in enumerate(tqdm(summary_dict.keys())):
+                variant = g.query(variant_id=the_rsid)
+                contig, pos = g.get_location_from_rsid(rsid=the_rsid)
+                # print variant-trait SE
+                summary_dict[the_rsid]['se'] = pygwasvcf.VariantRecordGwasFuns.get_se(variant, trait_name)
+                # print variant-trait beta
+                summary_dict[the_rsid]['beta'] = pygwasvcf.VariantRecordGwasFuns.get_beta(variant, trait_name)
+                # print variant-trait allele frequency
+                summary_dict[the_rsid]['af'] = pygwasvcf.VariantRecordGwasFuns.get_af(variant, trait_name)
+            
+            # save all rsids into folder of that trait
+            summary_dict_name='{}/{}_summary_stats.pkl'.format(trait_rsids_dir,trait_name)
+             
+            with open(summary_dict_name, 'wb') as f:
+                pickle.dump(summary_dict, f)
+            
+            print("Finished saving summary stats to dictionary")
+            
+            
+    
+        
           
 def main(argv):
     
@@ -174,12 +255,14 @@ def main(argv):
     num_traits = FLAGS.num_traits
     num_snps = FLAGS.num_snps
     
-    #getRSIDS(path_to_vcf_files, num_traits, num_snps)
+    getRSIDS(path_to_vcf_files, num_traits, num_snps)
     # if passing from bash use: ar1=$(whereis plink | awk '{print $2}')
     # where awk '{print $2}' is the 2nd variable from whereis, which
     # is the path of plink
-    file_list = grabRSID_numpy(path_to_vcf_files,100)
-    generateLD(FLAGS.plink_path, FLAGS.reference_path,file_list, 1e-8)
+    #file_list = grabRSID_numpy(path_to_vcf_files,100)
+    #generateLD(FLAGS.plink_path, FLAGS.reference_path,file_list, 1e-8)
+    #generateSummaryStats('/home/ludeep/Desktop/PopGen/FinBank/rsid_temp/contig_0_rsidFil.txt', path_to_vcf_files, 1000)
+
 
 
 if __name__ == '__main__':
