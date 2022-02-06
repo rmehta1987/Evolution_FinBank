@@ -1,4 +1,5 @@
 import glob
+from operator import itemgetter
 from numpy import random
 import pygwasvcf
 import pysam
@@ -16,6 +17,7 @@ from absl import flags
 import pickle
 import math
 import collections
+import random
 
 FLAGS = flags.FLAGS
 '''
@@ -55,8 +57,8 @@ def random_unique_indexes_per_row(A: np.ndarray, N: int=2):
     m,n = A.shape
     return np.random.rand(m,n).argsort(1)[:,:N]
 
-def getRSIDS(path_to_vcf_files: str, num_traits: int,num_snps: int):
-    """Get RSIDS in num_traits vcf files limited to num_snps
+def generate_dict_summary_stats(path_to_vcf_files: str, num_traits: int,num_snps: int):
+    """Get Summary statistics and RSIDs in num_traits vcf files limited to num_snps
 
     Args:
         path_t_vcf_files (str): path to summary statistics in vcf files
@@ -98,36 +100,43 @@ def getRSIDS(path_to_vcf_files: str, num_traits: int,num_snps: int):
             #rsIDs = np.empty((len_the_contigs,num_variants), dtype=object) # Hopefully no out of index error to be efficient, also not efficient because unknown length of string
             summary_stat_dict = collections.defaultdict(dict)
             for i, a_contig in enumerate(tqdm(the_contigs)):
-                if i > 23:
+                summary_stat_dict[i] = collections.defaultdict(dict)
+                if i > 0:
                     break # VCF files contain other information after 23 chromosomes
                 for ind, variant in enumerate(tqdm(g.query(contig=a_contig))):
                     temp_trait_rsid = pygwasvcf.VariantRecordGwasFuns.get_id(variant, trait_name)
-                    summary_stat_dict[i][variant.pos]['beta']= pygwasvcf.VariantRecordGwasFuns.get_beta(variant, trait_name)
-                    summary_stat_dict[i][variant.pos]['se']= pygwasvcf.VariantRecordGwasFuns.get_se(variant, trait_name)
-                    summary_stat_dict[i][variant.pos]['af']= pygwasvcf.VariantRecordGwasFuns.get_beta(variant, trait_name)
-                    summary_stat_dict[i][variant.pos]['rsid']= temp_trait_rsid # Note some RSIDS are '.'
+                    summary_stat_dict[i][variant.pos]['beta'] = pygwasvcf.VariantRecordGwasFuns.get_beta(variant, trait_name)
+                    summary_stat_dict[i][variant.pos]['se'] = pygwasvcf.VariantRecordGwasFuns.get_se(variant, trait_name)
+                    summary_stat_dict[i][variant.pos]['af'] = pygwasvcf.VariantRecordGwasFuns.get_beta(variant, trait_name)
+                    summary_stat_dict[i][variant.pos]['rsid'] = temp_trait_rsid # Note some RSIDS are '.'
                     # rsIDs[i, ind]=pygwasvcf.VariantRecordGwasFuns.get_id(variant, trait_name) some id's are '.'
                     #if temp_trait != '.':
                     #    rsIDs[i, ind] = temp_trait # Currently ignore variants without IDs
 
 
-            # save all rsids into folder of that trait
-            #rsid_listname='{}/{}_all_variants_file'.format(trait_rsids_dir,trait_name)
+            # save all summmary stats dictionary into folder of that trait
             summary_state_dict_name='{}/{}_all_variants_file'.format(trait_rsids_dir,trait_name)
-            # now choose 
-            #np.save(rsid_listname, rsIDs)
-            #print("Finishing saving all rsIDs now moving to smaller subset if flag is not set to 0")
+             
+            np.save(summary_state_dict_name, summary_stat_dict)
+            print("Finishing saving all rsIDs now moving to smaller subset if flag is not set to 0")
             if num_snps != 0:
                 print ("Using a smaller number of varints, {}, in comparison to total number of SNPS, so downsampling SNPs.".format(num_snps))
-                temp_matrix = np.ones((len_the_contigs, num_variants))  # Create a matrix of ones to select random snps from defaultdict, summary_stat_dict 
-                new_temp_matrix = np.take(temp_matrix, random_unique_indexes_per_row(temp_matrix, num_snps))
                 summary_state_dict_name = '{}/{}_{}_variants_file'.format(trait_rsids_dir,trait_name,num_snps)
+                summary_state_dict_name_smaller = collections.defaultdict(dict)
                 # Extract SNPS from dictionary
-                summary_state_dict_name_smaller = summary_stat_dict
+                for contig in range(0, 23):
+                    sub_keys = random.sample(list(summary_stat_dict[contig].keys()), int(num_snps / 23)) # random subsample of keys
+                    sub_dict = itemgetter(*sub_keys)(summary_stat_dict[contig]) # list of dictionary of beta/allele freq/rsid/se values
+                    summary_state_dict_name_smaller[contig]=dict.fromkeys(sub_keys)
+                    # could use cython for double speedboost see: 
+                    # https://stackoverflow.com/questions/45882166/performance-of-updating-multiple-key-value-pairs-in-a-dict
+                    for key, val in zip(sub_keys, sub_dict):  
+                        summary_state_dict_name_smaller[contig][key] = val
+
                 np.save(summary_state_dict_name, summary_state_dict_name_smaller)
-                print("Saved subset of RSIDS of trait {}".format(trait_name))
+                print("Saved subset of summary stats of trait {}".format(trait_name))
                 del summary_state_dict_name_smaller
-                del summary_state_dict_name, new_temp_matrix, temp_matrix
+                del summary_state_dict_name, sub_keys, sub_dict
             else:
                 raise Exception("Number of variants requested is greater than number of SNPS in dataset, use 0 to request all variants")
             del summary_stat_dict
@@ -252,10 +261,11 @@ def main(argv):
     
    
     path_to_vcf_files = FLAGS.path_to_vcf_files
-    num_traits = FLAGS.num_traits
+    #num_traits = FLAGS.num_traits
+    num_traits = 1 # For testing
     num_snps = FLAGS.num_snps
     
-    getRSIDS(path_to_vcf_files, num_traits, num_snps)
+    generate_dict_summary_stats(path_to_vcf_files, num_traits, num_snps)
     # if passing from bash use: ar1=$(whereis plink | awk '{print $2}')
     # where awk '{print $2}' is the 2nd variable from whereis, which
     # is the path of plink
