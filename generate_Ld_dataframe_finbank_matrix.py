@@ -25,8 +25,8 @@ Mainly to see if data-frame that contains names of summary statitistics traits
 already exists 
 '''
 
-#temp_path_to_files = '/project2/jjberg/data/summary_statistics/Fin_BANK/open_gwas_data_vcf/'
-temp_path_to_files = '/home/ludeep/Desktop/PopGen/FinBank/open_gwas_data_vcf/'
+temp_path_to_files = '/project2/jjberg/data/summary_statistics/Fin_BANK/open_gwas_data_vcf/'
+#temp_path_to_files = '/home/ludeep/Desktop/PopGen/FinBank/open_gwas_data_vcf/'
 
 temp_path_to_reference = '/project2/jjberg/data/1kg/Reference/1kg.v3/EUR/EUR'
 temp_path_to_plink='/software/plink-1.90b6.9-el7-x86_64/plink'
@@ -79,7 +79,7 @@ def generate_dict_summary_stats(path_to_vcf_files: str, num_traits: int,num_snps
     for num_file, a_vcf_file in enumerate(tqdm(vcf_files)):
         with pygwasvcf.GwasVcf(a_vcf_file) as g, pysam.VariantFile(a_vcf_file) as samfile:
             trait_name = g.get_traits()[0]
-            trait_rsids_dir = os.path.join(path_to_vcf_files,'{}_rsids'.format(trait_name))
+            trait_rsids_dir = os.path.join(path_to_vcf_files,'{}_summary_stats'.format(trait_name))
             if not (os.path.isdir(trait_rsids_dir)):
                 try:
                     os.mkdir(trait_rsids_dir)
@@ -101,8 +101,9 @@ def generate_dict_summary_stats(path_to_vcf_files: str, num_traits: int,num_snps
             summary_stat_dict = collections.defaultdict(dict)
             for i, a_contig in enumerate(tqdm(the_contigs)):
                 summary_stat_dict[i] = collections.defaultdict(dict)
-                if i > 0:
-                    break # VCF files contain other information after 23 chromosomes
+                if i > len_the_contigs:
+                    break
+                # VCF files contain other information after 23 chromosomes
                 for ind, variant in enumerate(tqdm(g.query(contig=a_contig))):
                     temp_trait_rsid = pygwasvcf.VariantRecordGwasFuns.get_id(variant, trait_name)
                     summary_stat_dict[i][variant.pos]['beta'] = pygwasvcf.VariantRecordGwasFuns.get_beta(variant, trait_name)
@@ -261,8 +262,8 @@ def main(argv):
     
    
     path_to_vcf_files = FLAGS.path_to_vcf_files
-    #num_traits = FLAGS.num_traits
-    num_traits = 1 # For testing
+    num_traits = FLAGS.num_traits
+    #num_traits = 1 # For testing
     num_snps = FLAGS.num_snps
     
     generate_dict_summary_stats(path_to_vcf_files, num_traits, num_snps)
