@@ -18,6 +18,7 @@ import pickle
 import math
 import collections
 import random
+import itertools
 
 FLAGS = flags.FLAGS
 '''
@@ -25,11 +26,15 @@ Mainly to see if data-frame that contains names of summary statitistics traits
 already exists 
 '''
 
+#Cluster computer paths
 #temp_path_to_files = '/project2/jjberg/data/summary_statistics/Fin_BANK/open_gwas_data_vcf/'
-temp_path_to_files = '/home/ludeep/Desktop/PopGen/FinBank/open_gwas_data_vcf/'
+#temp_path_to_reference = '/project2/jjberg/data/1kg/Reference/1kg.v3/EUR/EUR'
+#temp_path_to_plink='/software/plink-1.90b6.9-el7-x86_64/plink'
 
-temp_path_to_reference = '/project2/jjberg/data/1kg/Reference/1kg.v3/EUR/EUR'
-temp_path_to_plink='/software/plink-1.90b6.9-el7-x86_64/plink'
+#local computer paths
+temp_path_to_reference = '/home/ludeep/Desktop/PopGen/eqtlGen/Reference/1kg.v3/EUR/EUR'
+temp_path_to_plink = '/usr/bin/plink1.9'
+temp_path_to_files = '/home/ludeep/Desktop/PopGen/FinBank/open_gwas_data_vcf/'
 
 # Data params
 flags.DEFINE_string('dataframe_name', 'fin_biobank_vcf.pkl', 'Dataframe (pkl) File Name')
@@ -157,7 +162,7 @@ def grabRSID_numpy(path_to_files: str, how_many: int):
     return sub_np_files
     
 
-def grabcommon_SNPS(path_to_files: str, how_many: int=None):
+def grab_all_variant_patth(path_to_files: str):
     
     import pathlib
     # testing path
@@ -167,7 +172,19 @@ def grabcommon_SNPS(path_to_files: str, how_many: int=None):
     np_files = path.rglob("*.npy") # get names of all numpy arrays
     pattern_re = re.compile(r".*?(all_variants).*?") # Get only files that have all SNPS 
     np_dicts = [a.as_posix() for a in np_files if re.match(pattern_re, a.name)] # Get file name and path
+    np.save("path_of_all_variants", np_dicts)
     
+    return np_dicts
+
+def grabcommon_SNPS(path_to_files: str=None, list_of_paths: str=None, how_many: int=None):
+    
+    if list_of_paths is None:
+        np_dicts = grab_all_variant_patth(path_to_files)
+    else:
+        np_dicts = np.load(list_of_paths, allow_pickle=True)
+    
+    print("Have found {} traits to find common SNPS".format(len(np_dicts)))
+
     common_snps_dict = collections.defaultdict(dict)
     
     #Load files
@@ -182,13 +199,16 @@ def grabcommon_SNPS(path_to_files: str, how_many: int=None):
                 common_snps_dict[contig] = dict1[contig].keys() & dict2[contig].keys()
             else: # common snps have already been found between first two dictionaries, so now only update with an interesection of the newest dictionary
                 common_snps_dict[contig].intersection_update(dict2[contig].keys())
-        del dict1, dict2
+        if i == 0:
+            del dict1, dict2
+        else:
+            del dict2
                 
-    
+    print("finished finding common SNPS")
     np.save('common_snps', common_snps_dict)
         
     
-def generateLD(path_to_plink: str, path_to_bfile: str, file_list_rsIDs: List[str], ld_threshold: float):
+def generateLD(path_to_plink: str, path_to_bfile: str, file_list_rsIDs: List[str], ld_threshold: float=1e-8):
     """Generate an diagonal block matrix consisting of rsIDs, rsIDs on different chromosomes
     are zero, and anything less than threshold will be 0. If shape of rsIDS is too large (X x M),
     M > 1000000 number of SNPS it will require a large memory and hard-drive diskspace
@@ -222,6 +242,61 @@ def generateLD(path_to_plink: str, path_to_bfile: str, file_list_rsIDs: List[str
             # Create LD file in table format from rsid_ids
             print("Executing Command plink")
             execute_command('{} --bfile {} --r2 triangle gz --extract {} --out {}'.format(path_to_plink, path_to_bfile, rsid_txt_file_name, '{}ld_contig_{}.out'.format(trait_name_path,contig))) 
+
+
+def generateLD_SummaryStats(path_to_plink: str, path_to_bfile: str, common_snps_path: str, ld_threshold: float=1e-8):
+    """Generate an diagonal block matrix LD matrix of snps identified by chromosome and variant position
+    anything outside that chromosome regions is 0, and anything less than threshold will be 0. If shape of matrix is too large (X x M),
+    M > 1000000 number of SNPS it will require a large memory and hard-drive diskspace
+    
+    Args:
+        common_snps (dictionary of sets):  a path to a dictionary of sets where each set is a variant position and each key is the chromosome
+        ld_threshold (float): Ld threshold anything below will be zero
+    """
+    #location of plink /usr/bin/plink1.9
+    #location of refernce: /home/ludeep/Desktop/PopGen/eqtlGen/Reference
+    def execute_command(command):
+        print("Execute command: {}".format(command))
+        process = subprocess.Popen(command.split(), stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        print(process.communicate()[0].decode("utf-8"))
+    
+    
+    # Create a LD matrix for every chromosome
+    print("Starting to process a list of common variants to generate LD matrix")
+    
+    common_snps = np.load(common_snps_path, allow_pickle=True).item()
+    assert len(common_snps.keys()) == 23, "Number of chromosomes in dictionary should only be 23"
+    
+    # Create SNP text file where column 1 is chromosome,
+    # Columns 2 and 3 are [f1st base pair position, 2nd base pair position (can be the same)]
+    # Column 4 is an arbritatry label
+    ld_save_path = 'Ld_calculations'
+    if not (os.path.isdir(ld_save_path)):
+        try:
+            os.mkdir(ld_save_path)
+        except OSError:
+            print("Error in making directory")
+    
+    #lambda function generate column 4
+    col4_fun = lambda x: str(x[0][0])+':'+str(x[1][0])
+    with open('{}/snp_list_for_ld.txt'.format(ld_save_path), 'ab') as the_file:
+        for contig in common_snps.keys():
+            snp_list = np.expand_dims(np.asarray(list(common_snps[contig]), dtype='O'), axis=1)
+            if contig < 22:
+                contig_col = np.expand_dims(np.asarray([contig]*len(snp_list),dtype='O'),axis=1)  # this is the first column 
+                col4_names = np.expand_dims(np.asarray(list(map(col4_fun,zip(contig_col,snp_list))),dtype='O'),axis=1)
+                thearray = np.concatenate((contig_col,snp_list, snp_list, col4_names),axis=1)
+                np.savetxt(the_file, thearray, fmt='%s')
+            else:
+                contig_col = np.expand_dims(np.asarray(['X']*len(snp_list),dtype='O'),axis=1) 
+                col4_names = np.expand_dims(np.asarray(list(map(col4_fun,zip(contig_col,snp_list))),dtype='O'),axis=1)
+                thearray = np.concatenate((contig_col,snp_list, snp_list, contig_col),axis=1)
+                np.savetxt(the_file, thearray, fmt='%s')
+            print("Executing Command plink to get LD matrix for contig: {}".format(contig))
+            execute_command('{} --bfile {} --r2 triangle gz --extract range {} --out {}'.format
+                    (path_to_plink, path_to_bfile, 'snp_list_for_ld.txt', '{}/ld_contig_{}.out'.format(ld_save_path,contig))) 
+    
+    
 
 def generateSummaryStats(unique_snps_path: str, path_to_vcf_files: str, random_sub_sample: None):
     """
@@ -297,7 +372,9 @@ def main(argv):
     num_snps = FLAGS.num_snps
     
     #generate_dict_summary_stats(path_to_vcf_files, num_traits, num_snps)
-    grabcommon_SNPS('na')
+    #grabcommon_SNPS('na', 'path_of_all_variants.npy')
+    common_snps_path = 'common_snps.npy'
+    generateLD_SummaryStats(FLAGS.plink_path, FLAGS.reference_path,'common_snps.npy', 1e-8)
     # if passing from bash use: ar1=$(whereis plink | awk '{print $2}')
     # where awk '{print $2}' is the 2nd variable from whereis, which
     # is the path of plink
