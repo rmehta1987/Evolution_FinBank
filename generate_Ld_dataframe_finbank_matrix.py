@@ -27,14 +27,14 @@ already exists
 '''
 
 #Cluster computer paths
-#temp_path_to_files = '/project2/jjberg/data/summary_statistics/Fin_BANK/open_gwas_data_vcf/'
-#temp_path_to_reference = '/project2/jjberg/data/1kg/Reference/1kg.v3/EUR/EUR'
-#temp_path_to_plink='/software/plink-1.90b6.9-el7-x86_64/plink'
+temp_path_to_files = '/project2/jjberg/data/summary_statistics/Fin_BANK/open_gwas_data_vcf/'
+temp_path_to_reference = '/project2/jjberg/data/1kg/Reference/1kg.v3/EUR/EUR'
+temp_path_to_plink='/software/plink-1.90b6.9-el7-x86_64/plink'
 
 #local computer paths
-temp_path_to_reference = '/home/ludeep/Desktop/PopGen/eqtlGen/Reference/1kg.v3/EUR/EUR'
-temp_path_to_plink = '/usr/bin/plink1.9'
-temp_path_to_files = '/home/ludeep/Desktop/PopGen/FinBank/open_gwas_data_vcf/'
+#temp_path_to_reference = '/home/ludeep/Desktop/PopGen/eqtlGen/Reference/1kg.v3/EUR/EUR'
+#temp_path_to_plink = '/usr/bin/plink1.9'
+#temp_path_to_files = '/home/ludeep/Desktop/PopGen/FinBank/open_gwas_data_vcf/'
 
 # Data params
 flags.DEFINE_string('dataframe_name', 'fin_biobank_vcf.pkl', 'Dataframe (pkl) File Name')
@@ -106,7 +106,7 @@ def generate_dict_summary_stats(path_to_vcf_files: str, num_traits: int,num_snps
             summary_stat_dict = collections.defaultdict(dict)
             for i, a_contig in enumerate(tqdm(the_contigs)):
                 summary_stat_dict[i] = collections.defaultdict(dict)
-                if i > 0:
+                if i > 23:
                     break # VCF files contain other information after 23 chromosomes
                 for ind, variant in enumerate(tqdm(g.query(contig=a_contig))):
                     temp_trait_rsid = pygwasvcf.VariantRecordGwasFuns.get_id(variant, trait_name)
@@ -166,27 +166,37 @@ def grab_all_variant_patth(path_to_files: str):
     
     import pathlib
     # testing path
-    test_path = '/home/ludeep/Desktop/PopGen/FinBank/testing_dirctory/'
-    #path = pathlib.Path(path_to_files) 
-    path = pathlib.Path(test_path) 
+    #test_path = '/home/ludeep/Desktop/PopGen/FinBank/testing_dirctory/'
+    #path = pathlib.Path(test_path)  
+    path = pathlib.Path(path_to_files) 
+    temp_path = '/project2/jjberg/data/summary_statistics/Fin_BANK/'
+    save_path = "{}/common_snps/".format(path)
+    if not (os.path.isdir(save_path)):
+        try:
+            os.mkdir(save_path)
+        except OSError:
+            print("Error in making common snp  directory")
+    
+    
     np_files = path.rglob("*.npy") # get names of all numpy arrays
     pattern_re = re.compile(r".*?(all_variants).*?") # Get only files that have all SNPS 
     np_dicts = [a.as_posix() for a in np_files if re.match(pattern_re, a.name)] # Get file name and path
-    np.save("path_of_all_variants", np_dicts)
+    file_save_path = "{}/path_of_all_variants".format(save_path)
+    np.save(file_save_path, np_dicts)
     
-    return np_dicts
+    return np_dicts, file_save_path
 
 def grabcommon_SNPS(path_to_files: str=None, list_of_paths: str=None, how_many: int=None):
     
     if list_of_paths is None:
-        np_dicts = grab_all_variant_patth(path_to_files)
+        np_dicts, list_of_paths = grab_all_variant_patth(path_to_files)
     else:
         np_dicts = np.load(list_of_paths, allow_pickle=True)
     
     print("Have found {} traits to find common SNPS".format(len(np_dicts)))
 
     common_snps_dict = collections.defaultdict(dict)
-    
+    import pdb
     #Load files
     for i in range(0, len(np_dicts)-1):
         if i == 0:
@@ -196,16 +206,23 @@ def grabcommon_SNPS(path_to_files: str=None, list_of_paths: str=None, how_many: 
             dict2 = np.load(np_dicts[i+1], allow_pickle=True).item()
         for contig in range(0,23):  # should be upto 23 chromosomes
             if not common_snps_dict[contig]: 
+                print("contig {}".format(contig))
+                #pdb.set_trace()
                 common_snps_dict[contig] = dict1[contig].keys() & dict2[contig].keys()
             else: # common snps have already been found between first two dictionaries, so now only update with an interesection of the newest dictionary
-                common_snps_dict[contig].intersection_update(dict2[contig].keys())
+                check_common_empty = common_snps_dict[contig].intersection(dict2[contig].keys())
+                if check_common_empty:
+                    common_snps_dict[contig] = check_common_empty
+                else:
+                    print("No intersections found in this trait {}:".format(np_dicts[i+1]))
         if i == 0:
             del dict1, dict2
         else:
             del dict2
                 
     print("finished finding common SNPS")
-    np.save('common_snps', common_snps_dict)
+    save_path = "{}/common_snps/".format(path_to_files)
+    np.save('{}/common_snps_dict', common_snps_dict)
         
     
 def generateLD(path_to_plink: str, path_to_bfile: str, file_list_rsIDs: List[str], ld_threshold: float=1e-8):
@@ -367,14 +384,23 @@ def main(argv):
     
    
     path_to_vcf_files = FLAGS.path_to_vcf_files
-    #num_traits = FLAGS.num_traits
-    num_traits = 1 # For testing
+    num_traits = FLAGS.num_traits
+    #num_traits = 1 # For testing
     num_snps = FLAGS.num_snps
     
+    #testing calls
     #generate_dict_summary_stats(path_to_vcf_files, num_traits, num_snps)
     #grabcommon_SNPS('na', 'path_of_all_variants.npy')
-    common_snps_path = 'common_snps.npy'
-    generateLD_SummaryStats(FLAGS.plink_path, FLAGS.reference_path,'common_snps.npy', 1e-8)
+    #common_snps_path = 'common_snps.npy'
+    #generateLD_SummaryStats(FLAGS.plink_path, FLAGS.reference_path,'common_snps.npy', 1e-8)
+    
+    #Cluster calls
+    #generate_dict_summary_stats(path_to_vcf_files, num_traits, num_snps)
+    #grabcommon_SNPS(path_to_vcf_files, 'path_of_all_variants.npy')
+    grabcommon_SNPS(path_to_vcf_files)
+    #common_snps_path = 'common_snps.npy'
+    #generateLD_SummaryStats(FLAGS.plink_path, FLAGS.reference_path, common_snps_path, 1e-8)
+
     # if passing from bash use: ar1=$(whereis plink | awk '{print $2}')
     # where awk '{print $2}' is the 2nd variable from whereis, which
     # is the path of plink
