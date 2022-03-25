@@ -29,6 +29,7 @@ already exists
 #Cluster computer paths
 temp_path_to_files = '/project2/jjberg/data/summary_statistics/Fin_BANK/open_gwas_data_vcf/'
 temp_path_to_reference = '/project2/jjberg/data/1kg/Reference/1kg.v3/EUR/EUR'
+#temp_path_to_reference = '/project2/jjberg/data/1kg/plink-files/files/EUR/all_chroms'
 temp_path_to_plink='/software/plink-1.90b6.9-el7-x86_64/plink'
 
 #local computer paths
@@ -162,14 +163,14 @@ def grabRSID_numpy(path_to_files: str, how_many: int):
     return sub_np_files
     
 
-def grab_all_variant_patth(path_to_files: str):
+def grab_all_variant_path(path_to_files: str):
     
     import pathlib
     # testing path
     #test_path = '/home/ludeep/Desktop/PopGen/FinBank/testing_dirctory/'
     #path = pathlib.Path(test_path)  
     path = pathlib.Path(path_to_files) 
-    temp_path = '/project2/jjberg/data/summary_statistics/Fin_BANK/'
+ 
     save_path = "{}/common_snps/".format(path)
     if not (os.path.isdir(save_path)):
         try:
@@ -181,7 +182,8 @@ def grab_all_variant_patth(path_to_files: str):
     np_files = path.rglob("*.npy") # get names of all numpy arrays
     pattern_re = re.compile(r".*?(all_variants).*?") # Get only files that have all SNPS 
     np_dicts = [a.as_posix() for a in np_files if re.match(pattern_re, a.name)] # Get file name and path
-    file_save_path = "{}/path_of_all_variants".format(save_path)
+    file_save_path = "{}/path_to_variants".format(save_path) # note this should be eventually changed because of the
+    # regex above that looks for "all_variants"
     np.save(file_save_path, np_dicts)
     
     return np_dicts, file_save_path
@@ -189,7 +191,7 @@ def grab_all_variant_patth(path_to_files: str):
 def grabcommon_SNPS(path_to_files: str=None, list_of_paths: str=None, how_many: int=None):
     
     if list_of_paths is None:
-        np_dicts, list_of_paths = grab_all_variant_patth(path_to_files)
+        np_dicts, list_of_paths = grab_all_variant_path(path_to_files)
     else:
         np_dicts = np.load(list_of_paths, allow_pickle=True)
     
@@ -198,7 +200,7 @@ def grabcommon_SNPS(path_to_files: str=None, list_of_paths: str=None, how_many: 
     common_snps_dict = collections.defaultdict(dict)
     import pdb
     #Load files
-    for i in range(0, len(np_dicts)-1):
+    for i in tqdm(range(0, len(np_dicts)-1)):
         if i == 0:
             dict1 = np.load(np_dicts[i], allow_pickle=True).item()
             dict2 = np.load(np_dicts[i+1], allow_pickle=True).item()
@@ -221,8 +223,8 @@ def grabcommon_SNPS(path_to_files: str=None, list_of_paths: str=None, how_many: 
             del dict2
                 
     print("finished finding common SNPS")
-    save_path = "{}/common_snps/".format(path_to_files)
-    np.save('{}/common_snps_dict', common_snps_dict)
+    #save_path = "{}/common_snps/".format(path_to_files)
+    np.save('common_snps_dict', common_snps_dict)
         
     
 def generateLD(path_to_plink: str, path_to_bfile: str, file_list_rsIDs: List[str], ld_threshold: float=1e-8):
@@ -287,7 +289,7 @@ def generateLD_SummaryStats(path_to_plink: str, path_to_bfile: str, common_snps_
     # Create SNP text file where column 1 is chromosome,
     # Columns 2 and 3 are [f1st base pair position, 2nd base pair position (can be the same)]
     # Column 4 is an arbritatry label
-    ld_save_path = 'Ld_calculations'
+    ld_save_path = 'Ld_calculations3'
     if not (os.path.isdir(ld_save_path)):
         try:
             os.mkdir(ld_save_path)
@@ -297,23 +299,81 @@ def generateLD_SummaryStats(path_to_plink: str, path_to_bfile: str, common_snps_
     #lambda function generate column 4
     col4_fun = lambda x: str(x[0][0])+':'+str(x[1][0])
     with open('{}/snp_list_for_ld.txt'.format(ld_save_path), 'ab') as the_file:
-        for contig in common_snps.keys():
+        for contig in tqdm(common_snps.keys()):
             snp_list = np.expand_dims(np.asarray(list(common_snps[contig]), dtype='O'), axis=1)
             if contig < 22:
-                contig_col = np.expand_dims(np.asarray([contig]*len(snp_list),dtype='O'),axis=1)  # this is the first column 
+                actual_contig = contig + 1 # Since we are starting from index 0 
+                contig_col = np.expand_dims(np.asarray([actual_contig]*len(snp_list),dtype='O'),axis=1)  # this is the first column 
                 col4_names = np.expand_dims(np.asarray(list(map(col4_fun,zip(contig_col,snp_list))),dtype='O'),axis=1)
                 thearray = np.concatenate((contig_col,snp_list, snp_list, col4_names),axis=1)
                 np.savetxt(the_file, thearray, fmt='%s')
             else:
+                actual_contig='X'
                 contig_col = np.expand_dims(np.asarray(['X']*len(snp_list),dtype='O'),axis=1) 
                 col4_names = np.expand_dims(np.asarray(list(map(col4_fun,zip(contig_col,snp_list))),dtype='O'),axis=1)
                 thearray = np.concatenate((contig_col,snp_list, snp_list, contig_col),axis=1)
                 np.savetxt(the_file, thearray, fmt='%s')
             print("Executing Command plink to get LD matrix for contig: {}".format(contig))
             execute_command('{} --bfile {} --r2 triangle gz --extract range {} --out {}'.format
-                    (path_to_plink, path_to_bfile, 'snp_list_for_ld.txt', '{}/ld_contig_{}.out'.format(ld_save_path,contig))) 
+                    (path_to_plink, path_to_bfile, '{}/snp_list_for_ld.txt'.format(ld_save_path),
+                    '{}/ld_contig_{}.out'.format(ld_save_path,actual_contig))) 
     
     
+
+def generate_common_reference_snps(path_to_plink: str, path_to_bfile: str, common_snps_path: str):
+    """[summary]
+
+    Args:
+        path_to_plink (str): path to executable plink path
+        path_to_bfile (str): path to reference file
+        common_snps_path (str): a path to a dictionary of sets where each set is a variant position and each key is the chromosome
+    """
+    
+    #location of plink /usr/bin/plink1.9
+    #location of refernce: /home/ludeep/Desktop/PopGen/eqtlGen/Reference
+    def execute_command(command):
+        print("Execute command: {}".format(command))
+        process = subprocess.Popen(command.split(), stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        print(process.communicate()[0].decode("utf-8"))
+    
+    
+    # Create a LD matrix for every chromosome
+    print("Starting to process a list of common variants to common variants from Reference")
+    
+    common_snps = np.load(common_snps_path, allow_pickle=True).item()
+    assert len(common_snps.keys()) == 23, "Number of chromosomes in dictionary should only be 23"
+    
+    # Create SNP text file where column 1 is chromosome,
+    # Columns 2 and 3 are [f1st base pair position, 2nd base pair position (can be the same)]
+    # Column 4 is an arbritatry label
+    snp_reference_common = 'Reference_Common_Snps'
+    if not (os.path.isdir(snp_reference_common)):
+        try:
+            os.mkdir(snp_reference_common)
+        except OSError:
+            print("Error in making directory")
+    
+    #lambda function generate column 4
+    col4_fun = lambda x: str(x[0][0])+':'+str(x[1][0])
+    with open('{}/snp_list_for_reference.txt'.format(snp_reference_common), 'ab') as the_file:
+        for contig in common_snps.keys():
+            snp_list = np.expand_dims(np.asarray(list(common_snps[contig]), dtype='O'), axis=1)
+            if contig < 22:
+                actual_contig = contig + 1 # Since we are starting from index 0 
+                contig_col = np.expand_dims(np.asarray([actual_contig]*len(snp_list),dtype='O'),axis=1)  # this is the first column 
+                col4_names = np.expand_dims(np.asarray(list(map(col4_fun,zip(contig_col,snp_list))),dtype='O'),axis=1)
+                thearray = np.concatenate((contig_col,snp_list, snp_list, col4_names),axis=1)
+                np.savetxt(the_file, thearray, fmt='%s')
+            else:
+                actual_contig='X'
+                contig_col = np.expand_dims(np.asarray(['X']*len(snp_list),dtype='O'),axis=1) 
+                col4_names = np.expand_dims(np.asarray(list(map(col4_fun,zip(contig_col,snp_list))),dtype='O'),axis=1)
+                thearray = np.concatenate((contig_col,snp_list, snp_list, contig_col),axis=1)
+                np.savetxt(the_file, thearray, fmt='%s')
+            print("Executing Command plink to get common snps for contig: {}".format(contig))
+            execute_command('{} --bfile {} --extract range {} --write-snplist {}'.format
+                    (path_to_plink, path_to_bfile, 'snp_list_for_reference.txt', '{}/common_snp_contig_{}.out'.format(snp_reference_common,contig))) 
+
 
 def generateSummaryStats(unique_snps_path: str, path_to_vcf_files: str, random_sub_sample: None):
     """
@@ -396,10 +456,10 @@ def main(argv):
     
     #Cluster calls
     #generate_dict_summary_stats(path_to_vcf_files, num_traits, num_snps)
-    #grabcommon_SNPS(path_to_vcf_files, 'path_of_all_variants.npy')
-    grabcommon_SNPS(path_to_vcf_files)
-    #common_snps_path = 'common_snps.npy'
-    #generateLD_SummaryStats(FLAGS.plink_path, FLAGS.reference_path, common_snps_path, 1e-8)
+    #grabcommon_SNPS(path_to_vcf_files, '/project2/jjberg/data/summary_statistics/Fin_BANK/open_gwas_data_vcf/common_snps/path_to_variants.npy')
+    #grabcommon_SNPS(path_to_vcf_files)
+    common_snps_path = 'common_snps_dict.npy'
+    generateLD_SummaryStats(FLAGS.plink_path, FLAGS.reference_path, common_snps_path, 1e-8)
 
     # if passing from bash use: ar1=$(whereis plink | awk '{print $2}')
     # where awk '{print $2}' is the 2nd variable from whereis, which
