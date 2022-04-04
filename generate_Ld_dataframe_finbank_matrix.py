@@ -37,15 +37,7 @@ temp_path_to_reference = '/home/ludeep/Desktop/PopGen/eqtlGen/Reference/1kg.v3/E
 temp_path_to_plink = '/usr/bin/plink1.9'
 #temp_path_to_files = '/home/ludeep/Desktop/PopGen/FinBank/open_gwas_data_vcf/'
 temp_path_to_files = '/home/ludeep/Desktop/PopGen/FinBank/testing_dirctory/'
-temp_path_to_files = '/project2/jjberg/data/summary_statistics/Fin_BANK/open_gwas_data_vcf/'
-temp_path_to_reference = '/project2/jjberg/data/1kg/Reference/1kg.v3/EUR/EUR'
-#temp_path_to_reference = '/project2/jjberg/data/1kg/plink-files/files/EUR/all_chroms'
 temp_path_to_plink='/software/plink-1.90b6.9-el7-x86_64/plink'
-
-#local computer paths
-#temp_path_to_reference = '/home/ludeep/Desktop/PopGen/eqtlGen/Reference/1kg.v3/EUR/EUR'
-#temp_path_to_plink = '/usr/bin/plink1.9'
-#temp_path_to_files = '/home/ludeep/Desktop/PopGen/FinBank/open_gwas_data_vcf/'
 
 # Data params
 flags.DEFINE_string('dataframe_name', 'fin_biobank_vcf.pkl', 'Dataframe (pkl) File Name')
@@ -258,11 +250,7 @@ def convert_dict_chr_to_rsid(path_to_files: str=None, list_of_paths: str=None, h
     
     
     import pathlib
-    # testing path
-    #test_path = '/home/ludeep/Desktop/PopGen/FinBank/testing_dirctory/'
-    #path = pathlib.Path(test_path)  
-    #path = pathlib.Path(path_to_files) 
- 
+
     save_path = "{}rsid_summary_stat_dicts/".format(path_to_files)
     if not (os.path.isdir(save_path)):
         try:
@@ -576,8 +564,8 @@ def main(argv):
     convert_dict_chr_to_rsid(path_to_vcf_files)
     #generate_common_reference_snps(FLAGS.plink_path, FLAGS.reference_path, common_snps_path)
 
-    common_snps_path = 'common_snps_dict.npy'
-    generateLD_SummaryStats(FLAGS.plink_path, FLAGS.reference_path, common_snps_path, 1e-8)
+    #common_snps_path = 'common_snps_dict.npy'
+    #generateLD_SummaryStats(FLAGS.plink_path, FLAGS.reference_path, common_snps_path, 1e-8)
 
     # if passing from bash use: ar1=$(whereis plink | awk '{print $2}')
     # where awk '{print $2}' is the 2nd variable from whereis, which
