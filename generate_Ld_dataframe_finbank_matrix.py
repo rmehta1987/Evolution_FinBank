@@ -29,13 +29,14 @@ already exists
 #Cluster computer paths
 #temp_path_to_files = '/project2/jjberg/data/summary_statistics/Fin_BANK/open_gwas_data_vcf/'
 #temp_path_to_reference = '/project2/jjberg/data/1kg/Reference/1kg.v3/EUR/EUR'
+#temp_path_to_reference = '/project2/jjberg/data/1kg/plink-files/files/EUR/all_chroms'
 #temp_path_to_plink='/software/plink-1.90b6.9-el7-x86_64/plink'
 
 #local computer paths
 temp_path_to_reference = '/home/ludeep/Desktop/PopGen/eqtlGen/Reference/1kg.v3/EUR/EUR'
 temp_path_to_plink = '/usr/bin/plink1.9'
-temp_path_to_files = '/home/ludeep/Desktop/PopGen/FinBank/open_gwas_data_vcf/'
-
+#temp_path_to_files = '/home/ludeep/Desktop/PopGen/FinBank/open_gwas_data_vcf/'
+temp_path_to_files = '/home/ludeep/Desktop/PopGen/FinBank/testing_dirctory/'
 # Data params
 flags.DEFINE_string('dataframe_name', 'fin_biobank_vcf.pkl', 'Dataframe (pkl) File Name')
 flags.DEFINE_string('path_to_vcf_files', temp_path_to_files, 'Path to summary statistics')
@@ -106,7 +107,7 @@ def generate_dict_summary_stats(path_to_vcf_files: str, num_traits: int,num_snps
             summary_stat_dict = collections.defaultdict(dict)
             for i, a_contig in enumerate(tqdm(the_contigs)):
                 summary_stat_dict[i] = collections.defaultdict(dict)
-                if i > 0:
+                if i > 23:
                     break # VCF files contain other information after 23 chromosomes
                 for ind, variant in enumerate(tqdm(g.query(contig=a_contig))):
                     temp_trait_rsid = pygwasvcf.VariantRecordGwasFuns.get_id(variant, trait_name)
@@ -162,33 +163,50 @@ def grabRSID_numpy(path_to_files: str, how_many: int):
     return sub_np_files
     
 
-def grab_all_variant_patth(path_to_files: str):
+def grab_all_variant_path(path_to_files: str):
     
     import pathlib
     # testing path
-    test_path = '/home/ludeep/Desktop/PopGen/FinBank/testing_dirctory/'
-    #path = pathlib.Path(path_to_files) 
-    path = pathlib.Path(test_path) 
+    #test_path = '/home/ludeep/Desktop/PopGen/FinBank/testing_dirctory/'
+    #path = pathlib.Path(test_path)  
+    path = pathlib.Path(path_to_files) 
+ 
+    save_path = "{}/common_snps/".format(path)
+    if not (os.path.isdir(save_path)):
+        try:
+            os.mkdir(save_path)
+        except OSError:
+            print("Error in making common snp  directory")
+    
+    
     np_files = path.rglob("*.npy") # get names of all numpy arrays
     pattern_re = re.compile(r".*?(all_variants).*?") # Get only files that have all SNPS 
     np_dicts = [a.as_posix() for a in np_files if re.match(pattern_re, a.name)] # Get file name and path
-    np.save("path_of_all_variants", np_dicts)
+    file_save_path = "{}/path_to_variants".format(save_path) # note this should be eventually changed because of the
+    # regex above that looks for "all_variants"
+    np.save(file_save_path, np_dicts)
     
-    return np_dicts
+    return np_dicts, file_save_path
 
 def grabcommon_SNPS(path_to_files: str=None, list_of_paths: str=None, how_many: int=None):
-    
+    """Grab common SNPS between traits set by chromosome:position
+
+    Args:
+        path_to_files (str, optional): _description_. Defaults to None.
+        list_of_paths (str, optional): _description_. Defaults to None.
+        how_many (int, optional): _description_. Defaults to None.
+    """    
     if list_of_paths is None:
-        np_dicts = grab_all_variant_patth(path_to_files)
+        np_dicts, list_of_paths = grab_all_variant_path(path_to_files)
     else:
         np_dicts = np.load(list_of_paths, allow_pickle=True)
     
     print("Have found {} traits to find common SNPS".format(len(np_dicts)))
 
     common_snps_dict = collections.defaultdict(dict)
-    
+    import pdb
     #Load files
-    for i in range(0, len(np_dicts)-1):
+    for i in tqdm(range(0, len(np_dicts)-1)):
         if i == 0:
             dict1 = np.load(np_dicts[i], allow_pickle=True).item()
             dict2 = np.load(np_dicts[i+1], allow_pickle=True).item()
@@ -196,18 +214,118 @@ def grabcommon_SNPS(path_to_files: str=None, list_of_paths: str=None, how_many: 
             dict2 = np.load(np_dicts[i+1], allow_pickle=True).item()
         for contig in range(0,23):  # should be upto 23 chromosomes
             if not common_snps_dict[contig]: 
+                print("contig {}".format(contig))
+                #pdb.set_trace()
                 common_snps_dict[contig] = dict1[contig].keys() & dict2[contig].keys()
             else: # common snps have already been found between first two dictionaries, so now only update with an interesection of the newest dictionary
-                common_snps_dict[contig].intersection_update(dict2[contig].keys())
+                check_common_empty = common_snps_dict[contig].intersection(dict2[contig].keys())
+                if check_common_empty:
+                    common_snps_dict[contig] = check_common_empty
+                else:
+                    print("No intersections found in this trait {}:".format(np_dicts[i+1]))
         if i == 0:
             del dict1, dict2
         else:
             del dict2
                 
     print("finished finding common SNPS")
-    np.save('common_snps', common_snps_dict)
+    #save_path = "{}/common_snps/".format(path_to_files)
+    np.save('common_snps_dict', common_snps_dict)
         
+
+def convert_dict_chr_to_rsid(path_to_files: str=None, list_of_paths: str=None, how_many: int=None):
+    """Utility function to convert dictionary that is keyed by chromome:position to rsid
+
+    Args:
+        path_to_files (str, optional): _description_. Defaults to None.
+        list_of_paths (str, optional): _description_. Defaults to None.
+        how_many (int, optional): _description_. Defaults to None.
+    """
+    if list_of_paths is None:
+        np_dicts, list_of_paths = grab_all_variant_path(path_to_files)
+    else:
+        np_dicts = np.load(list_of_paths, allow_pickle=True)
     
+    
+    import pathlib
+    # testing path
+    #test_path = '/home/ludeep/Desktop/PopGen/FinBank/testing_dirctory/'
+    #path = pathlib.Path(test_path)  
+    #path = pathlib.Path(path_to_files) 
+ 
+    save_path = "{}rsid_summary_stat_dicts/".format(path_to_files)
+    if not (os.path.isdir(save_path)):
+        try:
+            os.mkdir(save_path)
+        except OSError:
+            print("Error in creating dictory for converting summary stat dict to RSIDS")
+    
+    rsid_stat_dict = collections.defaultdict(dict)
+    for i in tqdm(range(0, len(np_dicts)-1)):
+        skipped = 0   # counter for how many variants were skipped
+        trait_dict = np.load(np_dicts[i], allow_pickle=True).item()  # load trait dictionary
+        for contig in trait_dict.keys():
+            for position in trait_dict[contig].keys():
+                temp_rsid = trait_dict[contig][position]['rsid']
+                if temp_rsid != '.':
+                    rsid_stat_dict[temp_rsid]['beta'] =  trait_dict[contig][position]['beta']
+                    rsid_stat_dict[temp_rsid]['se'] =  trait_dict[contig][position]['se']
+                    rsid_stat_dict[temp_rsid]['af'] =  trait_dict[contig][position]['af']
+                else:
+                    skipped += 1
+        rsid_stat_dict['skipped'] = skipped
+        # Saving RSID trait 
+        # RSID file name
+        # Grab Trait name
+        trait_name = np_dicts[i].split('/')[-1] # trait name is last part of file path
+        rsid_file_name = "{}{}_rsids".format(save_path,trait_name[:-4])
+        np.save(rsid_file_name, rsid_stat_dict)
+            
+        
+        
+        
+
+def grabcommon_SNPS_RSID(path_to_files: str=None, list_of_paths: str=None, how_many: int=None):
+    """Grab common SNPS between traits sorted by RSIDS
+
+    Args:
+        path_to_files (str, optional): _description_. Defaults to None.
+        list_of_paths (str, optional): _description_. Defaults to None.
+        how_many (int, optional): _description_. Defaults to None.
+    """ 
+
+    if list_of_paths is None:
+        np_dicts, list_of_paths = grab_all_variant_path(path_to_files)
+    else:
+        np_dicts = np.load(list_of_paths, allow_pickle=True)
+    
+    print("Have found {} traits to find common SNPS via RSIDS".format(len(np_dicts)))
+
+    common_snps_dict = collections.defaultdict(dict)
+    import pdb
+    #Load files
+    for i in tqdm(range(0, len(np_dicts)-1)):
+        if i == 0:
+            dict1 = np.load(np_dicts[i], allow_pickle=True).item()
+            dict2 = np.load(np_dicts[i+1], allow_pickle=True).item()
+        else:
+            dict2 = np.load(np_dicts[i+1], allow_pickle=True).item()
+        for contig in range(0,23):  # should be upto 23 chromosomes
+            if not common_snps_dict[contig]: 
+                print("contig {}".format(contig))
+                #pdb.set_trace()
+                
+            else: # common snps have already been found between first two dictionaries, so now only update with an interesection of the newest dictionary
+                check_common_empty = common_snps_dict[contig].intersection(dict2[contig].keys())
+                if check_common_empty:
+                    common_snps_dict[contig] = check_common_empty
+                else:
+                    print("No intersections found in this trait {}:".format(np_dicts[i+1]))
+        if i == 0:
+            del dict1, dict2
+        else:
+            del dict2
+            
 def generateLD(path_to_plink: str, path_to_bfile: str, file_list_rsIDs: List[str], ld_threshold: float=1e-8):
     """Generate an diagonal block matrix consisting of rsIDs, rsIDs on different chromosomes
     are zero, and anything less than threshold will be 0. If shape of rsIDS is too large (X x M),
@@ -270,7 +388,7 @@ def generateLD_SummaryStats(path_to_plink: str, path_to_bfile: str, common_snps_
     # Create SNP text file where column 1 is chromosome,
     # Columns 2 and 3 are [f1st base pair position, 2nd base pair position (can be the same)]
     # Column 4 is an arbritatry label
-    ld_save_path = 'Ld_calculations'
+    ld_save_path = 'Ld_calculations3'
     if not (os.path.isdir(ld_save_path)):
         try:
             os.mkdir(ld_save_path)
@@ -280,24 +398,78 @@ def generateLD_SummaryStats(path_to_plink: str, path_to_bfile: str, common_snps_
     #lambda function generate column 4
     col4_fun = lambda x: str(x[0][0])+':'+str(x[1][0])
     with open('{}/snp_list_for_ld.txt'.format(ld_save_path), 'ab') as the_file:
-        for contig in common_snps.keys():
+        for contig in tqdm(common_snps.keys()):
             snp_list = np.expand_dims(np.asarray(list(common_snps[contig]), dtype='O'), axis=1)
             if contig < 22:
-                contig_col = np.expand_dims(np.asarray([contig]*len(snp_list),dtype='O'),axis=1)  # this is the first column 
+                actual_contig = contig + 1 # Since we are starting from index 0 
+                contig_col = np.expand_dims(np.asarray([actual_contig]*len(snp_list),dtype='O'),axis=1)  # this is the first column 
                 col4_names = np.expand_dims(np.asarray(list(map(col4_fun,zip(contig_col,snp_list))),dtype='O'),axis=1)
                 thearray = np.concatenate((contig_col,snp_list, snp_list, col4_names),axis=1)
                 np.savetxt(the_file, thearray, fmt='%s')
             else:
+                actual_contig='X'
                 contig_col = np.expand_dims(np.asarray(['X']*len(snp_list),dtype='O'),axis=1) 
                 col4_names = np.expand_dims(np.asarray(list(map(col4_fun,zip(contig_col,snp_list))),dtype='O'),axis=1)
                 thearray = np.concatenate((contig_col,snp_list, snp_list, contig_col),axis=1)
                 np.savetxt(the_file, thearray, fmt='%s')
-            print("Executing Command plink to get LD matrix for contig: {}".format(contig))
+            print("Executing Command plink to get LD matrix for contig: {}".format(actual_contig))
             execute_command('{} --bfile {} --r2 triangle gz --extract range {} --out {}'.format
-                    (path_to_plink, path_to_bfile, 'snp_list_for_ld.txt', '{}/ld_contig_{}.out'.format(ld_save_path,contig))) 
+                    (path_to_plink, path_to_bfile, '{}/snp_list_for_ld.txt'.format(ld_save_path),
+                    '{}/ld_contig_{}.out'.format(ld_save_path,actual_contig))) 
     
     
 
+def generate_common_reference_snps(path_to_plink: str, path_to_bfile: str, common_snps_path: str):
+    """[summary]
+
+    Args:
+        path_to_plink (str): path to executable plink path
+        path_to_bfile (str): path to reference file
+        common_snps_path (str): a path to a dictionary of sets where each set is a variant position and each key is the chromosome
+    """
+    
+    def execute_command(command):
+        print("Execute command: {}".format(command))
+        process = subprocess.Popen(command.split(), stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        print(process.communicate()[0].decode("utf-8"))
+    
+    # Create a common list for every chromosome
+    print("Starting to process a list of common variants to common variants from Reference")
+    
+    common_snps = np.load(common_snps_path, allow_pickle=True).item()
+    assert len(common_snps.keys()) == 23, "Number of chromosomes in dictionary should only be 23"
+    
+    # Create SNP text file where column 1 is chromosome,
+    # Columns 2 and 3 are [f1st base pair position, 2nd base pair position (can be the same)]
+    # Column 4 is an arbritatry label
+    snp_reference_common = 'Reference_Common_Snps'
+    if not (os.path.isdir(snp_reference_common)):
+        try:
+            os.mkdir(snp_reference_common)
+        except OSError:
+            print("Error in making directory")
+    
+    #lambda function generate column 4
+    col4_fun = lambda x: str(x[0][0])+':'+str(x[1][0])
+    with open('{}/snp_list_for_reference.txt'.format(snp_reference_common), 'ab') as the_file:
+        for contig in common_snps.keys():
+            snp_list = np.expand_dims(np.asarray(list(common_snps[contig]), dtype='O'), axis=1)
+            if contig < 22:
+                actual_contig = contig + 1 # Since we are starting from index 0 
+                contig_col = np.expand_dims(np.asarray([actual_contig]*len(snp_list),dtype='O'),axis=1)  # this is the first column 
+                col4_names = np.expand_dims(np.asarray(list(map(col4_fun,zip(contig_col,snp_list))),dtype='O'),axis=1)
+                thearray = np.concatenate((contig_col,snp_list, snp_list, col4_names),axis=1)
+                np.savetxt(the_file, thearray, fmt='%s')
+            else:
+                actual_contig='X'
+                contig_col = np.expand_dims(np.asarray(['X']*len(snp_list),dtype='O'),axis=1) 
+                col4_names = np.expand_dims(np.asarray(list(map(col4_fun,zip(contig_col,snp_list))),dtype='O'),axis=1)
+                thearray = np.concatenate((contig_col,snp_list, snp_list, contig_col),axis=1)
+                np.savetxt(the_file, thearray, fmt='%s')
+            print("Executing Command plink to get common snps for contig: {}".format(contig))
+            execute_command('{} --bfile {} --extract range {} --write-snplist'.format
+                    (path_to_plink, path_to_bfile, '{}/snp_list_for_reference.txt'.format(snp_reference_common))) 
+            os.rename('plink.snplist','{}/common_snp_contig_{}.snplist'.format(snp_reference_common, actual_contig) )
 def generateSummaryStats(unique_snps_path: str, path_to_vcf_files: str, random_sub_sample: None):
     """
         This function unfortunately does not work, as it is difficult to query a VCF file based on RSID.  
@@ -367,14 +539,26 @@ def main(argv):
     
    
     path_to_vcf_files = FLAGS.path_to_vcf_files
-    #num_traits = FLAGS.num_traits
-    num_traits = 1 # For testing
+    num_traits = FLAGS.num_traits
+    #num_traits = 1 # For testing
     num_snps = FLAGS.num_snps
     
+    #testing calls
     #generate_dict_summary_stats(path_to_vcf_files, num_traits, num_snps)
     #grabcommon_SNPS('na', 'path_of_all_variants.npy')
-    common_snps_path = 'common_snps.npy'
-    generateLD_SummaryStats(FLAGS.plink_path, FLAGS.reference_path,'common_snps.npy', 1e-8)
+    #common_snps_path = 'common_snps.npy'
+    #generateLD_SummaryStats(FLAGS.plink_path, FLAGS.reference_path,'common_snps.npy', 1e-8)
+    
+    #Cluster calls
+    #generate_dict_summary_stats(path_to_vcf_files, num_traits, num_snps)
+    #grabcommon_SNPS(path_to_vcf_files, '/project2/jjberg/data/summary_statistics/Fin_BANK/open_gwas_data_vcf/common_snps/path_to_variants.npy')
+    #grabcommon_SNPS(path_to_vcf_files)
+    #common_snps_path = 'common_snps.npy'
+    #generateLD_SummaryStats(FLAGS.plink_path, FLAGS.reference_path, common_snps_path, 1e-8)
+    convert_dict_chr_to_rsid(path_to_vcf_files)
+    #generate_common_reference_snps(FLAGS.plink_path, FLAGS.reference_path, common_snps_path)
+
+
     # if passing from bash use: ar1=$(whereis plink | awk '{print $2}')
     # where awk '{print $2}' is the 2nd variable from whereis, which
     # is the path of plink
@@ -387,28 +571,3 @@ def main(argv):
 if __name__ == '__main__':
     app.run(main)
     
-'''
-for variant in g.query(contig="1", start=1, stop=1):
-        # print variant-trait P value
-        print(pygwasvcf.VariantRecordGwasFuns.get_pval(variant, "trait_name"))
-        # print variant-trait SE
-        print(pygwasvcf.VariantRecordGwasFuns.get_se(variant, "trait_name"))
-        # print variant-trait beta
-        print(pygwasvcf.VariantRecordGwasFuns.get_beta(variant, "trait_name"))
-        # print variant-trait allele frequency
-        print(pygwasvcf.VariantRecordGwasFuns.get_af(variant, "trait_name"))
-        # print variant-trait ID
-        print(pygwasvcf.VariantRecordGwasFuns.get_id(variant, "trait_name"))
-        # create and print ID on-the-fly if missing
-        print(pygwasvcf.VariantRecordGwasFuns.get_id(variant, "trait_name", create_if_missing=True))
-        # print variant-trait sample size
-        print(pygwasvcf.VariantRecordGwasFuns.get_ss(variant, "trait_name"))
-        # print variant-trait total sample size from header if per-variant is missing
-        print(pygwasvcf.VariantRecordGwasFuns.get_ss(variant, "trait_name", g.get_metadata()))
-        # print variant-trait number of cases
-        print(pygwasvcf.VariantRecordGwasFuns.get_nc(variant, "trait_name"))
-        # print variant-trait total cases from header if per-variant is missing
-        print(pygwasvcf.VariantRecordGwasFuns.get_nc(variant, "trait_name", g.get_metadata()))
-
-
-'''

@@ -150,6 +150,9 @@ open_gwas_data_vcf/
 *.pkl
 *.npy
 
+#Saved Text files
+*.tsv
+
 # vsCode
 .vscode/
 
