@@ -37,6 +37,16 @@ temp_path_to_reference = '/home/ludeep/Desktop/PopGen/eqtlGen/Reference/1kg.v3/E
 temp_path_to_plink = '/usr/bin/plink1.9'
 #temp_path_to_files = '/home/ludeep/Desktop/PopGen/FinBank/open_gwas_data_vcf/'
 temp_path_to_files = '/home/ludeep/Desktop/PopGen/FinBank/testing_dirctory/'
+temp_path_to_files = '/project2/jjberg/data/summary_statistics/Fin_BANK/open_gwas_data_vcf/'
+temp_path_to_reference = '/project2/jjberg/data/1kg/Reference/1kg.v3/EUR/EUR'
+#temp_path_to_reference = '/project2/jjberg/data/1kg/plink-files/files/EUR/all_chroms'
+temp_path_to_plink='/software/plink-1.90b6.9-el7-x86_64/plink'
+
+#local computer paths
+#temp_path_to_reference = '/home/ludeep/Desktop/PopGen/eqtlGen/Reference/1kg.v3/EUR/EUR'
+#temp_path_to_plink = '/usr/bin/plink1.9'
+#temp_path_to_files = '/home/ludeep/Desktop/PopGen/FinBank/open_gwas_data_vcf/'
+
 # Data params
 flags.DEFINE_string('dataframe_name', 'fin_biobank_vcf.pkl', 'Dataframe (pkl) File Name')
 flags.DEFINE_string('path_to_vcf_files', temp_path_to_files, 'Path to summary statistics')
@@ -428,12 +438,16 @@ def generate_common_reference_snps(path_to_plink: str, path_to_bfile: str, commo
         common_snps_path (str): a path to a dictionary of sets where each set is a variant position and each key is the chromosome
     """
     
+    #location of plink /usr/bin/plink1.9
+    #location of refernce: /home/ludeep/Desktop/PopGen/eqtlGen/Reference
     def execute_command(command):
         print("Execute command: {}".format(command))
         process = subprocess.Popen(command.split(), stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         print(process.communicate()[0].decode("utf-8"))
     
     # Create a common list for every chromosome
+    
+    # Create a LD matrix for every chromosome
     print("Starting to process a list of common variants to common variants from Reference")
     
     common_snps = np.load(common_snps_path, allow_pickle=True).item()
@@ -470,6 +484,10 @@ def generate_common_reference_snps(path_to_plink: str, path_to_bfile: str, commo
             execute_command('{} --bfile {} --extract range {} --write-snplist'.format
                     (path_to_plink, path_to_bfile, '{}/snp_list_for_reference.txt'.format(snp_reference_common))) 
             os.rename('plink.snplist','{}/common_snp_contig_{}.snplist'.format(snp_reference_common, actual_contig) )
+            execute_command('{} --bfile {} --extract range {} --write-snplist {}'.format
+                    (path_to_plink, path_to_bfile, 'snp_list_for_reference.txt', '{}/common_snp_contig_{}.out'.format(snp_reference_common,contig))) 
+
+
 def generateSummaryStats(unique_snps_path: str, path_to_vcf_files: str, random_sub_sample: None):
     """
         This function unfortunately does not work, as it is difficult to query a VCF file based on RSID.  
@@ -558,6 +576,8 @@ def main(argv):
     convert_dict_chr_to_rsid(path_to_vcf_files)
     #generate_common_reference_snps(FLAGS.plink_path, FLAGS.reference_path, common_snps_path)
 
+    common_snps_path = 'common_snps_dict.npy'
+    generateLD_SummaryStats(FLAGS.plink_path, FLAGS.reference_path, common_snps_path, 1e-8)
 
     # if passing from bash use: ar1=$(whereis plink | awk '{print $2}')
     # where awk '{print $2}' is the 2nd variable from whereis, which
