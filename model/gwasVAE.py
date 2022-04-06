@@ -60,6 +60,7 @@ class GwasVAE(BaseVAE):
         modules = []
         if hidden_dims is None:
             hidden_dims = [self.true_beta]*3
+        hidden_dims = hidden_dims + [hidden_dims*2]
         channels = ss_stats_dim
         
         # ========================================================================#
