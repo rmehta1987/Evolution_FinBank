@@ -4,6 +4,43 @@ from torch import nn
 from torch.nn import functional as F
 from .types_ import *
 
+def swish(x):
+    """Swish activation function"""
+    return torch.mul(x, torch.sigmoid(x))
+
+
+class SiLU(nn.Module):
+    '''
+    Applies the Sigmoid Linear Unit (SiLU) function element-wise:
+    
+        SiLU(x) = x * sigmoid(x)
+
+    Shape:
+        - Input: (N, *) where * means, any number of additional
+          dimensions
+        - Output: (N, *), same shape as the input
+
+    References:
+        -  Related paper:
+        https://arxiv.org/pdf/1606.08415.pdf
+
+    Examples:
+        >>> m = silu()
+        >>> input = torch.randn(2)
+        >>> output = m(input)
+
+    '''
+    def __init__(self):
+        '''
+        Init method.
+        '''
+        super().__init__() # init the base class
+
+    def forward(self, input):
+        '''
+        Forward pass of the function.
+        '''
+        return swish(input) # simply apply already implemented SiLU
 
 class GwasVAE(BaseVAE):
 
@@ -13,7 +50,6 @@ class GwasVAE(BaseVAE):
                  gamma: int,
                  omega: int,
                  hidden_dims: List = None,
-                 img_size:int = 64,
                  **kwargs) -> None:
         super(GwasVAE, self).__init__()
 
@@ -28,85 +64,48 @@ class GwasVAE(BaseVAE):
         
         # ========================================================================#
         # Build true beta Encoder
-        self.embed_z2_code = nn.Linear(latent2_dim, img_size * img_size)
-        self.embed_data = nn.Conv2d(in_channels, in_channels, kernel_size=1)
-
         modules = []
-        channels = in_channels + 1 # One more channel for the latent code
         for h_dim in hidden_dims:
             modules.append(
                 nn.Sequential(
-                    nn.Conv2d(channels, out_channels=h_dim,
-                              kernel_size= 3, stride= 2, padding  = 1),
-                    nn.BatchNorm2d(h_dim),
-                    nn.LeakyReLU())
+                    nn.Linear(channels, h_dim),
+                    SiLU())
             )
-            channels = h_dim
-
-        self.encoder_z1_layers = nn.Sequential(*modules)
-        self.fc_z1_mu = nn.Linear(hidden_dims[-1]*4, latent1_dim)
-        self.fc_z1_var = nn.Linear(hidden_dims[-1]*4, latent1_dim)
+        self.encoder_true_beta = nn.Sequential(*modules)
         # ========================================================================#
-
+        '''
         # ========================================================================#
         # Build omega Encoder
+        modules = []
         for h_dim in hidden_dims:
             modules.append(
                 nn.Sequential(
-                    nn.Conv2d(channels, out_channels=h_dim,
-                              kernel_size= 3, stride= 2, padding  = 1),
-                    nn.BatchNorm2d(h_dim),
-                    nn.LeakyReLU())
+                    nn.Linear(channels, h_dim),
+                    SiLU())
             )
-            channels = h_dim
 
-        self.encoder_z2_layers = nn.Sequential(*modules)
-        self.fc_z2_mu = nn.Linear(hidden_dims[-1]*4, latent2_dim)
-        self.fc_z2_var = nn.Linear(hidden_dims[-1]*4, latent2_dim)
+        self.encoder_omega = nn.Sequential(*modules)
+
         # ========================================================================#
         
         # ========================================================================#
         # Build true gamma Encoder
-        self.embed_z2_code = nn.Linear(latent2_dim, img_size * img_size)
-        self.embed_data = nn.Conv2d(in_channels, in_channels, kernel_size=1)
-
         modules = []
-        channels = in_channels + 1 # One more channel for the latent code
         for h_dim in hidden_dims:
             modules.append(
                 nn.Sequential(
-                    nn.Conv2d(channels, out_channels=h_dim,
-                              kernel_size= 3, stride= 2, padding  = 1),
-                    nn.BatchNorm2d(h_dim),
-                    nn.LeakyReLU())
+                    nn.Linear(channels, h_dim),
+                    SiLU())
             )
-            channels = h_dim
 
-        self.encoder_z1_layers = nn.Sequential(*modules)
-        self.fc_z1_mu = nn.Linear(hidden_dims[-1]*4, latent1_dim)
-        self.fc_z1_var = nn.Linear(hidden_dims[-1]*4, latent1_dim)
-
+        self.encoder_gamma = nn.Sequential(*modules)
+        '''
         # ========================================================================#
-        # Build true beta Decoder
+        # Build true beta decoder
         self.debed_z1_code = nn.Linear(latent1_dim, 1024)
         self.debed_z2_code = nn.Linear(latent2_dim, 1024)
         modules = []
         hidden_dims.reverse()
-
-        for i in range(len(hidden_dims) - 1):
-            modules.append(
-                nn.Sequential(
-                    nn.ConvTranspose2d(hidden_dims[i],
-                                       hidden_dims[i + 1],
-                                       kernel_size=3,
-                                       stride = 2,
-                                       padding=1,
-                                       output_padding=1),
-                    nn.BatchNorm2d(hidden_dims[i + 1]),
-                    nn.LeakyReLU())
-            )
-
-
 
         self.decoder = nn.Sequential(*modules)
 
@@ -124,7 +123,7 @@ class GwasVAE(BaseVAE):
                             nn.Tanh())
 
        
-    def encode_z2(self, input: Tensor) -> List[Tensor]:
+    def encode_evolutionary_parameters(self, input: Tensor) -> List[Tensor]:
         """
         Encodes the input by passing through the encoder network
         and returns the latent codes.
@@ -141,7 +140,7 @@ class GwasVAE(BaseVAE):
 
         return [z2_mu, z2_log_var]
 
-    def encode_z1(self, input: Tensor, z2: Tensor) -> List[Tensor]:
+    def encode_true_betas(self, input: Tensor, z2: Tensor) -> List[Tensor]:
         x = self.embed_data(input)
         z2 = self.embed_z2_code(z2)
         z2 = z2.view(-1, self.img_size, self.img_size).unsqueeze(1)
@@ -155,11 +154,10 @@ class GwasVAE(BaseVAE):
         return [z1_mu, z1_log_var]
 
     def encode(self, input: Tensor) -> List[Tensor]:
-        z2_mu, z2_log_var = self.encode_z2(input)
-        z2 = self.reparameterize(z2_mu, z2_log_var)
-
-        # z1 ~ q(z1|x, z2)
-        z1_mu, z1_log_var = self.encode_z1(input, z2)
+        
+        true_beta_mean, true_beta_logvar = self.model.encode(encoder_true_beta)
+        
+        
         return [z1_mu, z1_log_var, z2_mu, z2_log_var, z2]
 
     def decode(self, input: Tensor) -> Tensor:
@@ -181,11 +179,14 @@ class GwasVAE(BaseVAE):
 
     def forward(self, input: Tensor, **kwargs) -> List[Tensor]:
 
-        # Encode the input into the latent codes z1 and z2
-        # z2 ~q(z2 | x)
-        # z1 ~ q(z1|x, z2)
-        z1_mu, z1_log_var, z2_mu, z2_log_var, z2 = self.encode(input)
-        z1 = self.reparameterize(z1_mu, z1_log_var)
+        # Encode the input summary statistics beta-hat into conditional evolutionary parameters
+        # true-beta, gamma (selection coefficient), omega (strength of stabalizing selection)
+        # true-beta ~q(true-beta | beta-hat)
+        # gamma ~ q(gamma | true-beta)
+        # omega ~ q(omega | true-beta)
+        
+        true_beta_mu, true_beta_log_var, omega_mu, omega_var, gamma_mu, gamma_var = self.encode(input)
+       
 
         # Reconstruct the image using both the latent codes
         # x ~ p(x|z1, z2)
