@@ -27,17 +27,17 @@ already exists
 '''
 
 #Cluster computer paths
-#temp_path_to_files = '/project2/jjberg/data/summary_statistics/Fin_BANK/open_gwas_data_vcf/'
-#temp_path_to_reference = '/project2/jjberg/data/1kg/Reference/1kg.v3/EUR/EUR'
-#temp_path_to_reference = '/project2/jjberg/data/1kg/plink-files/files/EUR/all_chroms'
-#temp_path_to_plink='/software/plink-1.90b6.9-el7-x86_64/plink'
+temp_path_to_files = '/project2/jjberg/data/summary_statistics/Fin_BANK/open_gwas_data_vcf/'
+temp_path_to_reference = '/project2/jjberg/data/1kg/Reference/1kg.v3/EUR/EUR'
+temp_path_to_reference = '/project2/jjberg/data/1kg/plink-files/files/EUR/all_chroms'
+temp_path_to_plink='/software/plink-1.90b6.9-el7-x86_64/plink'
 
 #local computer paths
-temp_path_to_reference = '/home/ludeep/Desktop/PopGen/eqtlGen/Reference/1kg.v3/EUR/EUR'
-temp_path_to_plink = '/usr/bin/plink1.9'
+#temp_path_to_reference = '/home/ludeep/Desktop/PopGen/eqtlGen/Reference/1kg.v3/EUR/EUR'
+#temp_path_to_plink = '/usr/bin/plink1.9'
 #temp_path_to_files = '/home/ludeep/Desktop/PopGen/FinBank/open_gwas_data_vcf/'
-temp_path_to_files = '/home/ludeep/Desktop/PopGen/FinBank/testing_dirctory/'
-temp_path_to_plink='/software/plink-1.90b6.9-el7-x86_64/plink'
+#temp_path_to_files = '/home/ludeep/Desktop/PopGen/FinBank/testing_dirctory/'
+
 
 # Data params
 flags.DEFINE_string('dataframe_name', 'fin_biobank_vcf.pkl', 'Dataframe (pkl) File Name')
@@ -262,6 +262,9 @@ def convert_dict_chr_to_rsid(path_to_files: str=None, list_of_paths: str=None, h
     for i in tqdm(range(0, len(np_dicts)-1)):
         skipped = 0   # counter for how many variants were skipped
         trait_dict = np.load(np_dicts[i], allow_pickle=True).item()  # load trait dictionary
+        # Grab Trait name
+        trait_name = np_dicts[i].split('/')[-1] # trait name is last part of file path
+        print("Getting RSIDS of trait {}: ".format(trait_name[:-4]))
         for contig in trait_dict.keys():
             for position in trait_dict[contig].keys():
                 temp_rsid = trait_dict[contig][position]['rsid']
@@ -274,11 +277,9 @@ def convert_dict_chr_to_rsid(path_to_files: str=None, list_of_paths: str=None, h
         rsid_stat_dict['skipped'] = skipped
         # Saving RSID trait 
         # RSID file name
-        # Grab Trait name
-        trait_name = np_dicts[i].split('/')[-1] # trait name is last part of file path
         rsid_file_name = "{}{}_rsids".format(save_path,trait_name[:-4])
         np.save(rsid_file_name, rsid_stat_dict)
-            
+        print("Saved Trait RSID, onto next trait")   
         
         
         
@@ -548,7 +549,9 @@ def main(argv):
     num_traits = FLAGS.num_traits
     #num_traits = 1 # For testing
     num_snps = FLAGS.num_snps
-    
+
+    path_to_all_trait = '/project2/jjberg/data/summary_statistics/Fin_BANK/open_gwas_data_vcf/rsid_summary_stat_dicts/these_files.npy'
+
     #testing calls
     #generate_dict_summary_stats(path_to_vcf_files, num_traits, num_snps)
     #grabcommon_SNPS('na', 'path_of_all_variants.npy')
@@ -561,7 +564,7 @@ def main(argv):
     #grabcommon_SNPS(path_to_vcf_files)
     #common_snps_path = 'common_snps.npy'
     #generateLD_SummaryStats(FLAGS.plink_path, FLAGS.reference_path, common_snps_path, 1e-8)
-    convert_dict_chr_to_rsid(path_to_vcf_files)
+    convert_dict_chr_to_rsid(path_to_vcf_files, path_to_all_trait)
     #generate_common_reference_snps(FLAGS.plink_path, FLAGS.reference_path, common_snps_path)
 
     #common_snps_path = 'common_snps_dict.npy'
