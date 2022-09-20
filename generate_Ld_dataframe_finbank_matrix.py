@@ -1,5 +1,6 @@
 import glob
 from operator import itemgetter
+from xml.dom.expatbuilder import FILTER_ACCEPT
 from numpy import random
 import pygwasvcf
 import pysam
@@ -34,6 +35,7 @@ temp_path_to_plink='/software/plink-1.90b6.9-el7-x86_64/plink'
 
 #local computer paths
 #temp_path_to_reference = '/home/ludeep/Desktop/PopGen/eqtlGen/Reference/1kg.v3/EUR/EUR'
+#temp_path_snp_list_reference = '/mnt/sda/home/ludeep/Desktop/PopGen/FinBank/ReferenceData/snp.txt'
 #temp_path_to_plink = '/usr/bin/plink1.9'
 #temp_path_to_files = '/home/ludeep/Desktop/PopGen/FinBank/open_gwas_data_vcf/'
 #temp_path_to_files = '/home/ludeep/Desktop/PopGen/FinBank/testing_dirctory/'
@@ -51,6 +53,22 @@ flags.DEFINE_string('reference_path', temp_path_to_reference, "Path to Reference
 flags.register_validator('num_snps',
                          lambda value: value % 22 == 0,
                          message='--num_snps must be divisible by 22 or 0 for all SNPS')
+
+
+
+# map of keyword arguments recognised to Plink1.9 filtering flags
+filter_map = {"min_allele_frequency": " --maf {} ",
+              "max_allele_frequency": " --max-maf {} ",
+              "keep": " --keep {} ",
+              "remove": " --remove {} ",
+              "extract": " --extract {} ",
+              "exclude": " --exclude {} ",
+              "chromosome": " --chr {} ",
+              "ld_significance": " --ls-sig {} "}
+                      
+
+
+
 def random_unique_indexes_per_row(A: np.ndarray, N: int=2):
     """Choose random SNPS (column) from each trait (row)
     https://stackoverflow.com/questions/51279464/sampling-unique-column-indexes-for-each-row-of-a-numpy-array
@@ -189,6 +207,61 @@ def grab_all_variant_path(path_to_files: str):
     np.save(file_save_path, np_dicts)
     
     return np_dicts, file_save_path
+
+def grabSNPS_HumanGenome(path_to_files: str, path_to_plink: str, filter_args: dict):
+    """
+        Grabs SNPS based on filter using plink
+        Inpsired by: https://github.com/CGATOxford/cgat/blob/master/CGAT/GWAS.py
+
+    Args:
+        path_to_files (str ): File to plink bed files
+        path_to_plink (str): Location of plink
+        filter_args (dict): Map of filters, must by in plink format, see below
+        
+        * genotype_rate - exclude SNPs with a genotyping rate below this
+          value. [float]
+        * min_allele_frequency - only include SNPs with cohort/case allele
+          frequency above this threshold. [float]
+        * max_allele_frequency - include all SNPs with a MAF equal to or below
+          this value. [float]
+        * exclude_snp - exclude this single variant
+        * exclude_snps - text file list of variant IDs to exclude from analysis.
+          [file]
+        * chromosome - exclude all variants not on the specified chromosome(s).
+          [str/list]
+        * exclude_chromosome - exclude all variants on the specified
+          chromosome(s). [str can '1' or '1-22']
+        * autosome - exclude all non-place and non-autosomal variants.
+          [boolean]
+        * pseudo_autosome - include the pseudo-autosomal region of chromosome
+          X. [boolean]
+        * ignore_indels - remove all indels/multi-character allele coding
+          variants. [boolean]
+        * snp_bp_range - (from, to) range in bp of variants to include in
+          analysis. [tuple]
+    """
+    
+    # Need to assert filter_map only contains relevant filters that can be sent to plink1.9, uses set union
+    assert len(set(filter_args.keys()) | set(filter_map.keys())), "Filters do no match accept filters, please check arguments"
+    
+    
+    #location of plink /usr/bin/plink1.9
+    #location of refernce: /home/ludeep/Desktop/PopGen/eqtlGen/Reference
+    def execute_command(command):
+        print("Execute command: {}".format(command))
+        process = subprocess.Popen(command.split(), stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        print(process.communicate()[0].decode("utf-8"))
+    
+    create_args = ''
+    
+    for key in filter_args:
+        create_args += filter_map[key].format(filter_args[key])
+        
+    execute_command('{} --bfile {} {} --out {}'.format(path_to_plink, path_to_files, create_args, 'plink_snps.out'))
+    
+    
+    
+
 
 def grabcommon_SNPS(path_to_files: str=None, list_of_paths: str=None, how_many: int=None):
     """Grab common SNPS between traits set by chromosome:position
@@ -538,7 +611,54 @@ def generateSummaryStats(unique_snps_path: str, path_to_vcf_files: str, random_s
             
             print("Finished saving summary stats to dictionary")
             
+
+def generateSummaryStats_with_HumanGenome(unique_snps_path: str, path_to_vcf_files: str):
+    """
+        This function unfortunately does not work, as it is difficult to query a VCF file based on RSID.  
+        
+    Args:
+        unique_snps (str): Path to unique set of SNPS identified by RSIDS from a reference file from the 1000 Human Genome Project
+        path_to_vcf_files (str): [description]
+    Raises:
+        Exception: [description]
+    """    
+    
+    summary_dict = collections.defaultdict(dict)
+
+    vcf_files = glob.glob("{}*.gz".format(path_to_vcf_files))
+    # Extracts 
+    #
+    
+    
+    for num_file, a_vcf_file in enumerate(tqdm(vcf_files)):
+        with pygwasvcf.GwasVcf(a_vcf_file) as g, pysam.VariantFile(a_vcf_file) as samfile:
+            trait_name = g.get_traits()[0]
+            trait_rsids_dir = os.path.join(path_to_vcf_files,'{}_summary_stats'.format(trait_name)) # Generate a folder that stores the summary stats for this trait
+            g.index_rsid()
+            if not (os.path.isdir(trait_rsids_dir)):
+                try:
+                    os.mkdir(trait_rsids_dir)
+                except OSError:
+                    print("Error in making directory")
+            print("Getting statistics for this number in the trait {}".format(trait_name))
+            summary_dict['name'] = trait_name
+            with open(unique_snps_path) as file:
+                for i, the_rsid in enumerate(tqdm(file)):
+                    variant = g.query(variant_id=the_rsid)
+                    # print variant-trait SE
+                    summary_dict[the_rsid]['se'] = pygwasvcf.VariantRecordGwasFuns.get_se(variant, trait_name)
+                    # print variant-trait beta
+                    summary_dict[the_rsid]['beta'] = pygwasvcf.VariantRecordGwasFuns.get_beta(variant, trait_name)
+                    # print variant-trait allele frequency
+                    summary_dict[the_rsid]['af'] = pygwasvcf.VariantRecordGwasFuns.get_af(variant, trait_name)
             
+            # save all rsids into folder of that trait
+            summary_dict_name='{}/{}_summary_stats.pkl'.format(trait_rsids_dir,trait_name)
+             
+            with open(summary_dict_name, 'wb') as f:
+                pickle.dump(summary_dict, f)
+            
+            print("Finished saving summary stats to dictionary")            
     
         
           
@@ -549,6 +669,8 @@ def main(argv):
     num_traits = FLAGS.num_traits
     #num_traits = 1 # For testing
     num_snps = FLAGS.num_snps
+    
+    filter = {"chromosome": "1-22"}
 
     path_to_all_trait = '/project2/jjberg/data/summary_statistics/Fin_BANK/open_gwas_data_vcf/rsid_summary_stat_dicts/these_files.npy'
 
