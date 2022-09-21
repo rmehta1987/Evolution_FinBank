@@ -28,27 +28,28 @@ already exists
 '''
 
 #Cluster computer paths
-temp_path_to_files = '/project2/jjberg/data/summary_statistics/Fin_BANK/open_gwas_data_vcf/'
-temp_path_to_reference = '/project2/jjberg/data/1kg/Reference/1kg.v3/EUR/EUR'
-temp_path_to_reference = '/project2/jjberg/data/1kg/plink-files/files/EUR/all_chroms'
-temp_path_to_plink='/software/plink-1.90b6.9-el7-x86_64/plink'
+#temp_path_to_files = '/project2/jjberg/data/summary_statistics/Fin_BANK/open_gwas_data_vcf/'
+#temp_path_to_reference = '/project2/jjberg/data/1kg/Reference/1kg.v3/EUR/EUR'
+#temp_path_to_reference = '/project2/jjberg/data/1kg/plink-files/files/EUR/all_chroms'
+#temp_path_to_plink='/software/plink-1.90b6.9-el7-x86_64/plink'
 
 #local computer paths
-#temp_path_to_reference = '/home/ludeep/Desktop/PopGen/eqtlGen/Reference/1kg.v3/EUR/EUR'
-#temp_path_snp_list_reference = '/mnt/sda/home/ludeep/Desktop/PopGen/FinBank/ReferenceData/snp.txt'
-#temp_path_to_plink = '/usr/bin/plink1.9'
-#temp_path_to_files = '/home/ludeep/Desktop/PopGen/FinBank/open_gwas_data_vcf/'
-#temp_path_to_files = '/home/ludeep/Desktop/PopGen/FinBank/testing_dirctory/'
-
+temp_path_to_reference = '/home/ludeep/Desktop/PopGen/eqtlGen/Reference/1kg.v3/EUR/EUR'
+temp_path_to_plink = '/usr/bin/plink1.9'
+temp_path_to_files = '/mnt/sda/home/ludeep/Desktop/PopGen/FinBank/testing_dirctory/rsid_summary_stat_dicts/'
+#temp_path_to_files = '/mnt/sda/home/ludeep/Desktop/PopGen/FinBank/testing_dirctory'
+temp_path_to_snp_reference = '/mnt/sda/home/ludeep/Desktop/PopGen/FinBank/ReferenceData/Snp_per_Chromosomes/'
 
 # Data params
 flags.DEFINE_string('dataframe_name', 'fin_biobank_vcf.pkl', 'Dataframe (pkl) File Name')
-flags.DEFINE_string('path_to_vcf_files', temp_path_to_files, 'Path to summary statistics')
+flags.DEFINE_string('path_to_vcf_files', temp_path_to_files, 'Path to summary statistics, requires full path')
 flags.DEFINE_integer('num_traits', 1000, 'Number of traits to extract data from')
 flags.DEFINE_integer('num_snps', 660000, 'Number of SNPS to extract from dataset, 0 for all SNPS')
 flags.DEFINE_float('ld_threshold', 10e-8, "Threshold of LD matrix values, anything less than or equal to is 0.")
 flags.DEFINE_string('plink_path',temp_path_to_plink, "Path to Plink")
 flags.DEFINE_string('reference_path', temp_path_to_reference, "Path to Reference File")
+flags.DEFINE_string('hg_snps', temp_path_to_snp_reference, "Path to the SNPS in 1KG")
+
 
 flags.register_validator('num_snps',
                          lambda value: value % 22 == 0,
@@ -617,7 +618,7 @@ def generateSummaryStats_with_HumanGenome(unique_snps_path: str, path_to_vcf_fil
         This function unfortunately does not work, as it is difficult to query a VCF file based on RSID.  
         
     Args:
-        unique_snps (str): Path to unique set of SNPS identified by RSIDS from a reference file from the 1000 Human Genome Project
+        unique_snps (str): Path to unique set of SNPS per chromosome identified by RSIDS from a reference file from the 1000 Human Genome Project
         path_to_vcf_files (str): [description]
     Raises:
         Exception: [description]
@@ -625,42 +626,86 @@ def generateSummaryStats_with_HumanGenome(unique_snps_path: str, path_to_vcf_fil
     
     summary_dict = collections.defaultdict(dict)
 
-    vcf_files = glob.glob("{}*.gz".format(path_to_vcf_files))
-    # Extracts 
-    #
-    
-    
+    vcf_files = glob.glob("{}*.gz".format(path_to_vcf_files)) # gets a list of the vcf files as directed by the argument, path_to_vcf_files
+    snp_files = sorted(glob.glob("{}*.txt".format(unique_snps_path))) # gets a list of the snps per chromosome as directed by the argument, path_to_vcf_files
     for num_file, a_vcf_file in enumerate(tqdm(vcf_files)):
-        with pygwasvcf.GwasVcf(a_vcf_file) as g, pysam.VariantFile(a_vcf_file) as samfile:
+        with pygwasvcf.GwasVcf(a_vcf_file) as g:
             trait_name = g.get_traits()[0]
-            trait_rsids_dir = os.path.join(path_to_vcf_files,'{}_summary_stats'.format(trait_name)) # Generate a folder that stores the summary stats for this trait
-            g.index_rsid()
-            if not (os.path.isdir(trait_rsids_dir)):
+            trait_stats_dir = os.path.join(path_to_vcf_files,'{}_summary_stats'.format(trait_name)) # Generate a folder that stores the summary stats for this trait
+            g.index_rsid() # This is way to slow and can take hours!!!!
+            if not (os.path.isdir(trait_stats_dir)):
                 try:
-                    os.mkdir(trait_rsids_dir)
+                    os.mkdir(trait_stats_dir)
                 except OSError:
                     print("Error in making directory")
             print("Getting statistics for this number in the trait {}".format(trait_name))
             summary_dict['name'] = trait_name
-            with open(unique_snps_path) as file:
-                for i, the_rsid in enumerate(tqdm(file)):
-                    variant = g.query(variant_id=the_rsid)
-                    # print variant-trait SE
-                    summary_dict[the_rsid]['se'] = pygwasvcf.VariantRecordGwasFuns.get_se(variant, trait_name)
-                    # print variant-trait beta
-                    summary_dict[the_rsid]['beta'] = pygwasvcf.VariantRecordGwasFuns.get_beta(variant, trait_name)
-                    # print variant-trait allele frequency
-                    summary_dict[the_rsid]['af'] = pygwasvcf.VariantRecordGwasFuns.get_af(variant, trait_name)
+            for chr_num, a_file in enumerate(snp_files):
+                with open(a_file) as file:
+                    for i, the_rsid in enumerate(tqdm(file)):
+                        variant = g.query(variant_id=the_rsid)
+                        # print variant-trait SE
+                        summary_dict[chr_num][the_rsid]['se'] = pygwasvcf.VariantRecordGwasFuns.get_se(variant, trait_name)
+                        # print variant-trait beta
+                        summary_dict[chr_num][the_rsid]['beta'] = pygwasvcf.VariantRecordGwasFuns.get_beta(variant, trait_name)
+                        # print variant-trait allele frequency
+                        summary_dict[chr_num][the_rsid]['af'] = pygwasvcf.VariantRecordGwasFuns.get_af(variant, trait_name)
             
-            # save all rsids into folder of that trait
-            summary_dict_name='{}/{}_summary_stats.pkl'.format(trait_rsids_dir,trait_name)
+            # save all summary stats into folder of that trait
+            summary_dict_name='{}/{}_summary_stats.pkl'.format(trait_stats_dir,trait_name)
              
             with open(summary_dict_name, 'wb') as f:
                 pickle.dump(summary_dict, f)
             
             print("Finished saving summary stats to dictionary")            
-    
+
+def generateSummaryStats_with_HumanGenome_and_existing_dicts(unique_snps_path: str, path_to_all_variant_dicts: str):
+    """
+        This function filters the variants in dictionaries based on the variants in the Human Genome
         
+    Args:
+        unique_snps (str): Path to unique set of SNPS per chromosome identified by RSIDS from a reference file from the 1000 Human Genome Project
+        path_to_all_variant_dicts (str): summary stats of traits, where keys are the rsids
+    Raises:
+        Exception: [description]
+    """    
+    
+    summary_dict = collections.defaultdict(dict)
+
+    vcf_files = glob.glob("{}*.npy".format(path_to_all_variant_dicts)) # gets a list of the vcf files as directed by the argument, path_to_vcf_files
+    # gets a list of the snps per chromosome as directed by the argument, unique_snps_path (requires file names to have chromosome and number in them)
+    snp_files = sorted(glob.glob("{}*.txt".format(unique_snps_path))) 
+    for j, a_vcf_file in enumerate(tqdm(vcf_files)):
+        #/mnt/sda/home/ludeep/Desktop/PopGen/FinBank/testing_dirctory/rsid_summary_stat_dicts/finn-a-F5_DELIRIUM_all_variants_file_rsids.npy
+        trait_name = a_vcf_file.split('/')[-1][:-28]  # THIS IS SUPER HACKY but downstream problems (hindsigght is 20/20) since I never saved trait names in the dictionaries
+        trait_stats_dir = os.path.join(path_to_all_variant_dicts,'{}_HG_summary_stats'.format(trait_name)) # Generate a folder that stores the summary stats for this trait
+            
+        if not (os.path.isdir(trait_stats_dir)):
+            try:
+                os.mkdir(trait_stats_dir)
+            except OSError:
+                print("Error in making directory")
+        print("Getting statistics that are filtered by Human Genome for this trait {}".format(trait_name))
+        temp_dict = np.load(a_vcf_file, allow_pickle=True).item()
+        summary_dict['name'] = trait_name
+        for chr_num, a_file in enumerate(snp_files):
+            np_file = np.loadtxt(a_file, dtype='str')
+            summary_dict[chr_num] = collections.defaultdict(dict)
+            for line, the_rsid in enumerate(np_file):
+                # print variant-trait SE
+                if the_rsid in temp_dict:
+                    summary_dict[chr_num][the_rsid]['se'] = temp_dict[the_rsid]['se']
+                    # print variant-trait beta
+                    summary_dict[chr_num][the_rsid]['beta'] = temp_dict[the_rsid]['beta']
+                    # print variant-trait allele frequency
+                    summary_dict[chr_num][the_rsid]['af'] = temp_dict[the_rsid]['af']
+        
+        # save all summary stats into folder of that trait
+        summary_dict_name='{}/{}_HG_summary_stats'.format(trait_stats_dir,trait_name)
+        
+        np.save(summary_dict_name, summary_dict)
+            
+        print("Finished saving summary stats of trait {} to dictionary".format(trait_name))                
           
 def main(argv):
     
@@ -669,10 +714,11 @@ def main(argv):
     num_traits = FLAGS.num_traits
     #num_traits = 1 # For testing
     num_snps = FLAGS.num_snps
+    snp_list = FLAGS.hg_snps
     
-    filter = {"chromosome": "1-22"}
+    #filter = {"chromosome": "1-22"}
 
-    path_to_all_trait = '/project2/jjberg/data/summary_statistics/Fin_BANK/open_gwas_data_vcf/rsid_summary_stat_dicts/these_files.npy'
+    #path_to_all_trait = '/project2/jjberg/data/summary_statistics/Fin_BANK/open_gwas_data_vcf/rsid_summary_stat_dicts/these_files.npy'
 
     #testing calls
     #generate_dict_summary_stats(path_to_vcf_files, num_traits, num_snps)
@@ -686,7 +732,7 @@ def main(argv):
     #grabcommon_SNPS(path_to_vcf_files)
     #common_snps_path = 'common_snps.npy'
     #generateLD_SummaryStats(FLAGS.plink_path, FLAGS.reference_path, common_snps_path, 1e-8)
-    convert_dict_chr_to_rsid(path_to_vcf_files, path_to_all_trait)
+    #convert_dict_chr_to_rsid(path_to_vcf_files, path_to_all_trait)
     #generate_common_reference_snps(FLAGS.plink_path, FLAGS.reference_path, common_snps_path)
 
     #common_snps_path = 'common_snps_dict.npy'
@@ -699,6 +745,9 @@ def main(argv):
     #generateLD(FLAGS.plink_path, FLAGS.reference_path,file_list, 1e-8)
     #generateSummaryStats('/home/ludeep/Desktop/PopGen/FinBank/rsid_temp/contig_0_rsidFil.txt', path_to_vcf_files, 1000)
 
+    
+    # Generate Summary stats filtered by SNPS common to Human Genome
+    generateSummaryStats_with_HumanGenome_and_existing_dicts(snp_list, path_to_vcf_files)
 
 
 if __name__ == '__main__':
