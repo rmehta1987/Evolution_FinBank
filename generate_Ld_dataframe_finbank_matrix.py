@@ -29,17 +29,17 @@ already exists
 
 #Cluster computer paths
 #temp_path_to_files = '/project2/jjberg/data/summary_statistics/Fin_BANK/open_gwas_data_vcf/'
-#temp_path_to_files = '/project2/jjberg/data/summary_statistics/Fin_BANK/rsid_summary_stat_dicts/'
+temp_path_to_files = '/project2/jjberg/data/summary_statistics/Fin_BANK/rsid_summary_stat_dicts/'
 #temp_path_to_reference = '/project2/jjberg/data/1kg/Reference/1kg.v3/EUR/EUR'
 #temp_path_to_reference = '/project2/jjberg/data/1kg/plink-files/files/EUR/all_chroms'
-#temp_path_to_plink='/software/plink-1.90b6.9-el7-x86_64/plink'
-#temp_path_to_snp_reference = '/project2/jjberg/mehta5/EvolutionaryGWAS/Evolution_FinBank/ReferenceData/Snp_per_chromosome/'
+temp_path_to_plink='/software/plink-1.90b6.9-el7-x86_64/plink'
+temp_path_to_snp_reference = '/project2/jjberg/mehta5/EvolutionaryGWAS/Evolution_FinBank/ReferenceData/Snp_per_chromosome/'
 
 #local computer paths
-temp_path_to_reference = '/mnt/sda/home/ludeep/Desktop/PopGen/eqtlGen/Reference/1kg.v3/EUR/EUR'
-temp_path_to_plink = '/usr/bin/plink1.9'
-temp_path_to_files = '/mnt/sda/home/ludeep/Desktop/PopGen/FinBank/testing_dirctory/rsid_summary_stat_dicts/'
-temp_path_to_snp_reference = '/mnt/sda/home/ludeep/Desktop/PopGen/FinBank/ReferenceData/Snp_per_Chromosomes/'
+#temp_path_to_reference = '/mnt/sda/home/ludeep/Desktop/PopGen/eqtlGen/Reference/1kg.v3/EUR/EUR'
+#temp_path_to_plink = '/usr/bin/plink1.9'
+#temp_path_to_files = '/mnt/sda/home/ludeep/Desktop/PopGen/FinBank/testing_dirctory/rsid_summary_stat_dicts/'
+#temp_path_to_snp_reference = '/mnt/sda/home/ludeep/Desktop/PopGen/FinBank/ReferenceData/Snp_per_Chromosomes/'
 
 # Data params
 flags.DEFINE_string('dataframe_name', 'fin_biobank_vcf.pkl', 'Dataframe (pkl) File Name')
