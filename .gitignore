@@ -142,6 +142,7 @@ Ld_calculations/
 testing_dirctory/
 rsid_temp/
 model/
+ReferenceData/
 
 # Dataset Folders
 open_gwas_data_vcf/
@@ -156,9 +157,11 @@ open_gwas_data_vcf/
 
 # rsid files
 *_rsidFil.txt
+temp_snp_list.txt
 
 supertemp/
 Reference_Common_Snps/
+
 
 
 
