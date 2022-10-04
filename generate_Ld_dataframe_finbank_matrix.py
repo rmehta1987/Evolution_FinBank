@@ -31,15 +31,14 @@ already exists
 #temp_path_to_files = '/project2/jjberg/data/summary_statistics/Fin_BANK/open_gwas_data_vcf/'
 temp_path_to_files = '/project2/jjberg/data/summary_statistics/Fin_BANK/rsid_summary_stat_dicts/'
 #temp_path_to_reference = '/project2/jjberg/data/1kg/Reference/1kg.v3/EUR/EUR'
-temp_path_to_reference = '/project2/jjberg/data/1kg/plink-files/files/EUR/all_chroms'
+#temp_path_to_reference = '/project2/jjberg/data/1kg/plink-files/files/EUR/all_chroms'
 temp_path_to_plink='/software/plink-1.90b6.9-el7-x86_64/plink'
 temp_path_to_snp_reference = '/project2/jjberg/mehta5/EvolutionaryGWAS/Evolution_FinBank/ReferenceData/Snp_per_chromosome/'
 
 #local computer paths
-#temp_path_to_reference = '/home/ludeep/Desktop/PopGen/eqtlGen/Reference/1kg.v3/EUR/EUR'
+#temp_path_to_reference = '/mnt/sda/home/ludeep/Desktop/PopGen/eqtlGen/Reference/1kg.v3/EUR/EUR'
 #temp_path_to_plink = '/usr/bin/plink1.9'
 #temp_path_to_files = '/mnt/sda/home/ludeep/Desktop/PopGen/FinBank/testing_dirctory/rsid_summary_stat_dicts/'
-#temp_path_to_files = '/mnt/sda/home/ludeep/Desktop/PopGen/FinBank/testing_dirctory'
 #temp_path_to_snp_reference = '/mnt/sda/home/ludeep/Desktop/PopGen/FinBank/ReferenceData/Snp_per_Chromosomes/'
 
 # Data params
@@ -552,115 +551,6 @@ def generate_common_reference_snps(path_to_plink: str, path_to_bfile: str, commo
             execute_command('{} --bfile {} --extract range {} --write-snplist {}'.format
                     (path_to_plink, path_to_bfile, 'snp_list_for_reference.txt', '{}/common_snp_contig_{}.out'.format(snp_reference_common,contig))) 
 
-
-def generateSummaryStats(unique_snps_path: str, path_to_vcf_files: str, random_sub_sample: None):
-    """
-        This function unfortunately does not work, as it is difficult to query a VCF file based on RSID.  
-        
-    Args:
-        unique_snps (str): Path to unique set of SNPS identified by RSIDS
-        path_to_vcf_files (str): [description]
-        random_sub_sample (None): [description]
-
-    Raises:
-        Exception: [description]
-    """    
-    
-    summary_dict = {}
-    if not random_sub_sample:
-        random_sub_sample = math.inf
-    
-    vcf_files = glob.glob("{}*.gz".format(path_to_vcf_files))
-    with open(unique_snps_path) as file:
-        for line in file:
-            regex_pattern = r"[a-z0-9]*[^_;]"
-            rsid = line.rstrip().strip()
-            matches = re.finditer(regex_pattern, rsid)
-            for matchNum, match in enumerate(matches):
-                print ("Match {matchNum} was found at: {match}".format(matchNum = matchNum, match = match.group()))
-                summary_dict[match.group()] = None
-            if len(summary_dict) > random_sub_sample:
-                break
-    
-    for num_file, a_vcf_file in enumerate(tqdm(vcf_files)):
-        with pygwasvcf.GwasVcf(a_vcf_file) as g, pysam.VariantFile(a_vcf_file) as samfile:
-            trait_name = g.get_traits()[0]
-            trait_rsids_dir = os.path.join(path_to_vcf_files,'{}_rsids'.format(trait_name))
-            g.index_rsid()
-            if not (os.path.isdir(trait_rsids_dir)):
-                try:
-                    os.mkdir(trait_rsids_dir)
-                except OSError:
-                    print("Error in making directory")
-            print("Getting statistics for this number of variants {} in the trait {}".format(len(summary_dict), trait_name))
-            #print("debug break") -- debugging purposes
-            #break
-            # gets a list of all the contigs from the header (assumes header info has contigs)
-            for i, the_rsid in enumerate(tqdm(summary_dict.keys())):
-                variant = g.query(variant_id=the_rsid)
-                contig, pos = g.get_location_from_rsid(rsid=the_rsid)
-                # print variant-trait SE
-                summary_dict[the_rsid]['se'] = pygwasvcf.VariantRecordGwasFuns.get_se(variant, trait_name)
-                # print variant-trait beta
-                summary_dict[the_rsid]['beta'] = pygwasvcf.VariantRecordGwasFuns.get_beta(variant, trait_name)
-                # print variant-trait allele frequency
-                summary_dict[the_rsid]['af'] = pygwasvcf.VariantRecordGwasFuns.get_af(variant, trait_name)
-            
-            # save all rsids into folder of that trait
-            summary_dict_name='{}/{}_summary_stats.pkl'.format(trait_rsids_dir,trait_name)
-             
-            with open(summary_dict_name, 'wb') as f:
-                pickle.dump(summary_dict, f)
-            
-            print("Finished saving summary stats to dictionary")
-            
-
-def generateSummaryStats_with_HumanGenome(unique_snps_path: str, path_to_vcf_files: str):
-    """
-        This function unfortunately does not work, as it is difficult to query a VCF file based on RSID.  
-        
-    Args:
-        unique_snps (str): Path to unique set of SNPS per chromosome identified by RSIDS from a reference file from the 1000 Human Genome Project
-        path_to_vcf_files (str): [description]
-    Raises:
-        Exception: [description]
-    """    
-    
-    summary_dict = collections.defaultdict(dict)
-
-    vcf_files = glob.glob("{}*.gz".format(path_to_vcf_files)) # gets a list of the vcf files as directed by the argument, path_to_vcf_files
-    snp_files = sorted(glob.glob("{}*.txt".format(unique_snps_path))) # gets a list of the snps per chromosome as directed by the argument, path_to_vcf_files
-    for num_file, a_vcf_file in enumerate(tqdm(vcf_files)):
-        with pygwasvcf.GwasVcf(a_vcf_file) as g:
-            trait_name = g.get_traits()[0]
-            trait_stats_dir = os.path.join(path_to_vcf_files,'{}_summary_stats'.format(trait_name)) # Generate a folder that stores the summary stats for this trait
-            g.index_rsid() # This is way to slow and can take hours!!!!
-            if not (os.path.isdir(trait_stats_dir)):
-                try:
-                    os.mkdir(trait_stats_dir)
-                except OSError:
-                    print("Error in making directory")
-            print("Getting statistics for this number in the trait {}".format(trait_name))
-            summary_dict['name'] = trait_name
-            for chr_num, a_file in enumerate(snp_files):
-                with open(a_file) as file:
-                    for i, the_rsid in enumerate(tqdm(file)):
-                        variant = g.query(variant_id=the_rsid)
-                        # print variant-trait SE
-                        summary_dict[chr_num][the_rsid]['se'] = pygwasvcf.VariantRecordGwasFuns.get_se(variant, trait_name)
-                        # print variant-trait beta
-                        summary_dict[chr_num][the_rsid]['beta'] = pygwasvcf.VariantRecordGwasFuns.get_beta(variant, trait_name)
-                        # print variant-trait allele frequency
-                        summary_dict[chr_num][the_rsid]['af'] = pygwasvcf.VariantRecordGwasFuns.get_af(variant, trait_name)
-            
-            # save all summary stats into folder of that trait
-            summary_dict_name='{}/{}_summary_stats.pkl'.format(trait_stats_dir,trait_name)
-             
-            with open(summary_dict_name, 'wb') as f:
-                pickle.dump(summary_dict, f)
-            
-            print("Finished saving summary stats to dictionary")            
-
 def generateSummaryStats_with_HumanGenome_and_existing_dicts(unique_snps_path: str, path_to_all_variant_dicts: str):
     """
         This function filters the variants in dictionaries based on the variants in the Human Genome
@@ -701,13 +591,13 @@ def generateSummaryStats_with_HumanGenome_and_existing_dicts(unique_snps_path: s
             print("Skpping trait {} as it already exists".format(trait_name))
             continue
         else:
-            for chr_num, a_file in enumerate(snp_files):
+            for chr_num, a_file in enumerate(snp_files): # goes through every snp in each chromosome based on the Human Genome Reference
                 np_file = np.loadtxt(a_file, dtype='str')
                 summary_dict[chr_num] = collections.defaultdict(dict)
             
                 for line, the_rsid in enumerate(np_file):
                 # print variant-trait SE
-                    if the_rsid in temp_dict:
+                    if the_rsid in temp_dict: # if the human genome rsid is in the dictionary
                         summary_dict[chr_num][the_rsid]['se'] = temp_dict[the_rsid]['se']
                         # print variant-trait beta
                         summary_dict[chr_num][the_rsid]['beta'] = temp_dict[the_rsid]['beta']
@@ -718,9 +608,91 @@ def generateSummaryStats_with_HumanGenome_and_existing_dicts(unique_snps_path: s
             # save all summary stats into folder of that trait
         
             np.save(summary_dict_name, summary_dict)
-            del summary_dict
+            del summary_dict # for memory purposes and to reintalize dictionary for next trait
             print("Finished saving summary stats of trait {} to dictionary".format(trait_name))                
             # break # debugging purposes
+
+def identifyMaxSizesofSNPS(path_to_files: str):
+    """This is to create a file/dataframe/json/pick dump to identify the maximum sizes for each chromosome so it can be used
+        in downstream tasks to create dimensions of neural networks the same size
+
+    Args:
+        path_to_files (str): _description_
+    """         
+    max_snp_dim = 0 
+    # max_snp_dim2 = [] # Just for checking how many times the maximum occurs
+    vcf_files = glob.glob("{}*.npy".format(path_to_files)) # gets a list of the vcf files as directed by the argument, path_to_vcf_files
+    for j, a_vcf_file in enumerate(tqdm(vcf_files)):
+        # note that one of the keys is just the name of the trait identified by 'name', the rest are chromosomes (0-21)
+        vcf_dict = np.load(a_vcf_file, allow_pickle=True).item()
+        # from stack over flow  https://stackoverflow.com/questions/19845258/list-as-value-in-dictionary-get-key-of-longest-list
+        key = max(vcf_dict, key=lambda x:len(vcf_dict[x]))
+        curr_dim = len(vcf_dict[key])
+        if curr_dim >= max_snp_dim:
+            max_snp_dim = curr_dim
+            trait_name = vcf_dict['name']
+            chromo_num = key
+            # max_snp_dim2.append(max_snp_dim) # Just for checking how many times the maximum occurs
+        '''for key in vcf_dict.keys():
+            curr_dim = len(list(vcf_dict[key].keys()))
+            if curr_dim > max_snp_dim:
+                max_snp_dim = curr_dim
+                trait_name = vcf_dict['name']
+                chromo_num = key
+        '''
+                
+    print("Maximum SNP dim is in trait {} on chromosome {} with number of SNPS as: {}".format(trait_name, chromo_num, max_snp_dim))
+    #print("List of maximum SNPS {}".format(max_snp_dim2))
+
+def generate_LD_per_Chromosome_of_Trait(path_to_plink: str, path_to_bfile: str, path_of_vcf_dicts: str):
+    """Generate LD linkage-disequilbrium matrix of a chromosome per-trait
+
+    Args:
+        path_to_plink (str): path to executable plink path
+        path_to_bfile (str): path to reference file
+        path_of_vcf_dicts (str): a path to a dictionary of
+        vcf files where is each is a key chromosome and is further a dictionary that contains rsids/allele frequency/beta/standard error
+    """
+    
+    #location of plink /usr/bin/plink1.9
+    #location of refernce: /home/ludeep/Desktop/PopGen/eqtlGen/Reference
+    def execute_command(command):
+        print("Execute command: {}".format(command))
+        process = subprocess.Popen(command.split(), stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        print(process.communicate()[0].decode("utf-8"))
+    
+   
+    # Create a LD matrix for every chromosome
+    print("Starting to process a list of common variants to common variants from Reference")
+    
+    # Create SNP text file where column 1 is chromosome,
+    # Columns 2 and 3 are [f1st base pair position, 2nd base pair position (can be the same)]
+    # Column 4 is an arbritatry label
+    
+    
+    #lambda function generate column 4
+    #col4_fun = lambda x: str(x[0][0])+':'+str(x[1][0])
+    vcf_files = glob.glob("{}*.npy".format(path_of_vcf_dicts)) # gets a list of the vcf files as directed by the argument, path_to_vcf_files
+    for j, a_vcf_file in enumerate(tqdm(vcf_files)):
+        vcf_dict = np.load(a_vcf_file, allow_pickle=True).item()
+        #trait_name = vcf_dict['name']
+        ld_dir_trait_name = a_vcf_file[:-4] + '_LD/'
+        if not (os.path.isdir(ld_dir_trait_name)):
+            try:
+                os.mkdir(ld_dir_trait_name)
+            except OSError:
+                print("Error in making directory")
+        keys = list(vcf_dict.keys())
+        keys.remove('name')
+        for contig in keys:
+            
+            rsids = list(vcf_dict[contig].keys())
+            rsids = rsids[1:1000]
+            np.savetxt('temp_snp_list.txt', rsids, fmt='%s')
+            print("Executing Command plink to get common snps for contig: {}".format(contig+1))
+            execute_command('{} --bfile {} --r2 triangle --extract temp_snp_list.txt --out {}{}_ld'.format
+                    (path_to_plink, path_to_bfile, ld_dir_trait_name, int(contig)+1))
+            
           
 def main(argv):
     
@@ -763,7 +735,9 @@ def main(argv):
 
     
     # Generate Summary stats filtered by SNPS common to Human Genome
-    generateSummaryStats_with_HumanGenome_and_existing_dicts(snp_list, path_to_vcf_files)
+    #generateSummaryStats_with_HumanGenome_and_existing_dicts(snp_list, path_to_vcf_files)
+    #identifyMaxSizesofSNPS('/mnt/sda/home/ludeep/Desktop/PopGen/FinBank/testing_dirctory/rsid_summary_stat_dicts/_HG_summary_stats/')
+    generate_LD_per_Chromosome_of_Trait(FLAGS.plink_path, FLAGS.reference_path, '/mnt/sda/home/ludeep/Desktop/PopGen/FinBank/testing_dirctory/rsid_summary_stat_dicts/_HG_summary_stats/')
 
 
 if __name__ == '__main__':
