@@ -29,8 +29,8 @@ already exists
 
 #Cluster computer paths
 #temp_path_to_files = '/project2/jjberg/data/summary_statistics/Fin_BANK/open_gwas_data_vcf/'
-temp_path_to_files = '/project2/jjberg/data/summary_statistics/Fin_BANK/rsid_summary_stat_dicts/'
-#temp_path_to_reference = '/project2/jjberg/data/1kg/Reference/1kg.v3/EUR/EUR'
+temp_path_to_files = '/project2/jjberg/data/summary_statistics/Fin_BANK/rsid_summary_stat_dicts/_HG_summary_stats/'
+temp_path_to_reference = '/project2/jjberg/data/1kg/Reference/1kg.v3/EUR/EUR'
 #temp_path_to_reference = '/project2/jjberg/data/1kg/plink-files/files/EUR/all_chroms'
 temp_path_to_plink='/software/plink-1.90b6.9-el7-x86_64/plink'
 temp_path_to_snp_reference = '/project2/jjberg/mehta5/EvolutionaryGWAS/Evolution_FinBank/ReferenceData/Snp_per_chromosome/'
@@ -672,7 +672,11 @@ def generate_LD_per_Chromosome_of_Trait(path_to_plink: str, path_to_bfile: str, 
     
     #lambda function generate column 4
     #col4_fun = lambda x: str(x[0][0])+':'+str(x[1][0])
-    vcf_files = glob.glob("{}*.npy".format(path_of_vcf_dicts)) # gets a list of the vcf files as directed by the argument, path_to_vcf_files
+    vcf_files = glob.glob("{}*.npy".format(path_of_vcf_dicts))
+    #only do 5 traits right now
+    vcf_files = vcf_files[:5]
+    print (vcf_files)
+    # gets a list of the vcf files as directed by the argument, path_to_vcf_files
     for j, a_vcf_file in enumerate(tqdm(vcf_files)):
         vcf_dict = np.load(a_vcf_file, allow_pickle=True).item()
         #trait_name = vcf_dict['name']
@@ -686,13 +690,24 @@ def generate_LD_per_Chromosome_of_Trait(path_to_plink: str, path_to_bfile: str, 
         keys.remove('name')
         for contig in keys:
             
-            rsids = list(vcf_dict[contig].keys())
-            rsids = rsids[1:1000]
-            np.savetxt('temp_snp_list.txt', rsids, fmt='%s')
-            print("Executing Command plink to get common snps for contig: {}".format(contig+1))
-            execute_command('{} --bfile {} --r2 triangle --extract temp_snp_list.txt --out {}{}_ld'.format
-                    (path_to_plink, path_to_bfile, ld_dir_trait_name, int(contig)+1))
+            #print("Executing Command plink to get common snps {} for contig: {}".format(len(rsids), contig+1))
             
+            rsids = list(vcf_dict[contig].keys())
+            blocks = len(rsids) % 1000
+            for block in range(1,blocks+1):
+                
+                try:
+                    np.savetxt('temp_snp_list.txt', rsids, fmt='%s')
+                    print("Trying on full subset of rsids {}".format(len(rsids)))
+                    execute_command('{} --noweb --bfile {} --r2 triangle bin --parallel {} {} --extract temp_snp_list.txt --out {}{}_ld'.format(path_to_plink, path_to_bfile, block, blocks, ld_dir_trait_name, int(contig)+1))
+                except:
+                    #rsids = rsids[:10000]
+                    #np.savetxt('temp_snp_list.txt', rsids, fmt='%s')
+
+                    print("Try on smaller subset of rsids")
+                    #execute_command('{} --noweb --bfile {} --r2 triangle bin --extract temp_snp_list.txt --out {}{}_ld'.format(path_to_plink, path_to_bfile, ld_dir_trait_name, int(contig)+1))
+            break
+        break
           
 def main(argv):
     
@@ -737,7 +752,8 @@ def main(argv):
     # Generate Summary stats filtered by SNPS common to Human Genome
     #generateSummaryStats_with_HumanGenome_and_existing_dicts(snp_list, path_to_vcf_files)
     #identifyMaxSizesofSNPS('/mnt/sda/home/ludeep/Desktop/PopGen/FinBank/testing_dirctory/rsid_summary_stat_dicts/_HG_summary_stats/')
-    generate_LD_per_Chromosome_of_Trait(FLAGS.plink_path, FLAGS.reference_path, '/mnt/sda/home/ludeep/Desktop/PopGen/FinBank/testing_dirctory/rsid_summary_stat_dicts/_HG_summary_stats/')
+    generate_LD_per_Chromosome_of_Trait(FLAGS.plink_path, FLAGS.reference_path,
+    '/project2/jjberg/data/summary_statistics/Fin_BANK/rsid_summary_stat_dicts/_HG_summary_stats/')
 
 
 if __name__ == '__main__':
