@@ -679,7 +679,7 @@ def generate_LD_per_Chromosome_of_Trait(path_to_plink: str, path_to_bfile: str, 
     # gets a list of the vcf files as directed by the argument, path_to_vcf_files
     for j, a_vcf_file in enumerate(tqdm(vcf_files)):
         vcf_dict = np.load(a_vcf_file, allow_pickle=True).item()
-        #trait_name = vcf_dict['name']
+        trait_name = vcf_dict['name']
         ld_dir_trait_name = a_vcf_file[:-4] + '_LD/'
         if not (os.path.isdir(ld_dir_trait_name)):
             try:
@@ -693,19 +693,11 @@ def generate_LD_per_Chromosome_of_Trait(path_to_plink: str, path_to_bfile: str, 
             #print("Executing Command plink to get common snps {} for contig: {}".format(len(rsids), contig+1))
             
             rsids = list(vcf_dict[contig].keys())
-            blocks = len(rsids) % 1000
-            for block in range(1,blocks+1):
-                
-                try:
-                    np.savetxt('temp_snp_list.txt', rsids, fmt='%s')
-                    print("Trying on full subset of rsids {}".format(len(rsids)))
-                    execute_command('{} --noweb --bfile {} --r2 triangle bin --parallel {} {} --extract temp_snp_list.txt --out {}{}_ld'.format(path_to_plink, path_to_bfile, block, blocks, ld_dir_trait_name, int(contig)+1))
-                except:
-                    #rsids = rsids[:10000]
-                    #np.savetxt('temp_snp_list.txt', rsids, fmt='%s')
+            np.savetxt('{}_snp_list.txt'.format(trait_name), rsids, fmt='%s')
+            print("Trying on full subset of rsids {}".format(len(rsids)))
+            execute_command('{} --bfile {} --extract temp_snp_list.txt --make-bed --out {}{}'.format(
+                path_to_plink, path_to_bfile, ld_dir_trait_name, int(contig)+1))
 
-                    print("Try on smaller subset of rsids")
-                    #execute_command('{} --noweb --bfile {} --r2 triangle bin --extract temp_snp_list.txt --out {}{}_ld'.format(path_to_plink, path_to_bfile, ld_dir_trait_name, int(contig)+1))
             break
         break
           
